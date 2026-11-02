@@ -1,0 +1,276 @@
+# Messenger Quiz plan
+
+A web game where a player uploads one Facebook Messenger chat and is quizzed on its contents.
+
+- **Backend:** .NET 10 Minimal API
+- **Frontend:** React, TypeScript and Vite
+- **Storage:** none. Chats stay in memory and are never written to disk.
+
+"Who said this?" from a single uploaded chat is built. Everything else is under [Future work](#future-work).
+
+## Running it
+
+Start the API on port 5256:
+
+```bash
+dotnet run --project server/MessengerQuiz.Api --launch-profile http
+```
+
+Start the client on port 5173:
+
+```bash
+npm run dev --prefix client
+```
+
+Run the backend tests:
+
+```bash
+dotnet test MessengerQuiz.sln
+```
+
+Limits are in `QuizOptions` and can be overridden through configuration, for example `Quiz__UploadsPerMinutePerIp=20`.
+
+## What the export looks like
+
+Measured against a real export of 64 chats and 102,779 messages.
+
+| Finding | Design consequence |
+|---|---|
+| 1.27 GB total, but only 35 MB of chat HTML across 70 files | The browser sends only `message_*.html`, never media |
+| The largest chat is under 15 MB of HTML | A single-chat upload fits comfortably in one request |
+| 10,000 messages per file, newest first, up to 4 files per chat | All of a chat's pages are merged, then sorted by time |
+| Median chat has 60 messages and 2 senders; only 10 chats have 500+ messages and 3+ senders | The server rejects chats too small to quiz on |
+| About 80% of messages have no reactions | The reaction filter needs a fallback |
+| System lines look like normal messages ("X reacted ❤ to…", "joined the call"), roughly 680 found | They must be filtered out, or they give away the answer |
+| 21 blocks have no timestamp, and all are group photo entries with only an image | The parser skips them because they aren't messages |
+| Timestamps are in the export's language | `SentAt` is nullable, so another format doesn't reject the chat |
+| Message text is always in the second inner `div` | Reading only that `div` excludes media captions and link previews |
+| The participants header only appears on group chats | Participants come from message senders instead |
+| Timestamps have no time zone | Treat them as local time |
+| This export covers Dec 2022 to Dec 2023 only | Time-based questions are limited to the exported range |
+
+Message counts passing the filters, out of about 99,000 text messages (system lines excluded by an approximate, English-only pattern):
+
+| Minimum length | Any reactions | 1+ reactions | 2+ reactions |
+|---|---|---|---|
+| 15 characters | 91,364 | 15,604 | 4,993 |
+| 30 characters | 66,425 | 10,598 | 3,518 |
+| 50 characters | 32,134 | 5,654 | 2,007 |
+
+## Flow
+
+1. The player opens `messages/inbox` in their export and selects one chat's folder.
+2. The browser posts only that chat's `message_*.html` files, never its media.
+3. The server parses them, holds the result in memory and returns a secret chat ID.
+4. The quiz sends that chat ID in a header on each request.
+
+If the folder has no message pages directly inside it, such as `inbox` or `messages`, the browser shows an error and uploads nothing. If a chat is too small to quiz on, the server says so and the player can choose another.
+
+## API
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/api/chats` | Upload and parse one chat |
+| `GET` | `/api/questions/who-said-this` | Get the next question |
+| `DELETE` | `/api/chats/current` | Wipe the chat from memory |
+
+The `GET` and `DELETE` routes identify the chat with an `X-Chat-Id` header. The ID acts as a password, so it stays out of URLs, where it would reach browser history and request logs.
+
+### `POST /api/chats`
+
+Multipart form with one or more `message_*.html` files, all from the same chat.
+
+```json
+{
+  "chatId": "6f1c...",
+  "title": "Chat name",
+  "participants": ["A", "B", "C", "D"],
+  "messageCount": 18762,
+  "eligibleCount": 2140
+}
+```
+
+| Status | When |
+|---|---|
+| `201` | The chat was parsed |
+| `400` | No files, or a file isn't a recognisable Messenger page |
+| `400` | The files come from different chats, based on the page title and participants |
+| `413` | The upload is over the 50 MB limit |
+| `422` | The chat has fewer than 2 senders or too few eligible messages |
+| `429` | The IP address has hit the upload rate limit |
+| `503` | The server's memory cap is reached, or too many chats are already being parsed |
+
+Kestrel's default body limit is 30 MB. The endpoint sets its own 50 MB limit, so the cap is deliberate and leaves room for larger chats than this export contains.
+
+### `GET /api/questions/who-said-this`
+
+```json
+{
+  "messageId": "m_1042",
+  "text": "...",
+  "options": ["A", "B", "C", "D"],
+  "answer": "B",
+  "reactions": 3
+}
+```
+
+| Status | When |
+|---|---|
+| `200` | A question was returned |
+| `204` | Every eligible message has been asked |
+| `401` | The `X-Chat-Id` header is missing or unknown, or the chat has expired |
+
+The answer is in the response so the client can mark it. That's fine for a casual single-player game, even though it's visible in dev tools.
+
+## Multiple users
+
+Each upload gets its own random chat ID, and that ID is the only thing separating users. There are no accounts, and no endpoint lists chats. If two friends upload the same chat, they get separate copies with separate IDs.
+
+ASP.NET handles requests in parallel, so the shared parts need these protections:
+
+| Risk | Protection |
+|---|---|
+| The ID leaks through URLs or logs | Send it in the `X-Chat-Id` header |
+| Two tabs corrupt or repeat the asked-message list | Lock per chat around choosing a message and recording it |
+| Large uploads exhaust memory and crash the server, wiping every chat | Cap total stored chat size, 1 GB by default, and return `503` when full |
+| Simultaneous parsing slows everyone down | Parse at most 2 uploads at once and return `503` beyond a short queue |
+| One client floods uploads | Limit each IP address to 5 uploads per minute and return `429` |
+
+The limits are configuration values, so they can be tuned without code changes.
+
+Parsed messages never change after upload, so they can be read in parallel without locking.
+
+## Build steps
+
+### 1. Scaffold
+
+```
+MessengerQuiz/
+  your_activity_across_facebook/    git-ignored, never committed
+  server/MessengerQuiz.Api/
+  server/MessengerQuiz.Tests/
+  client/
+  plan.md
+```
+
+- Add `your_activity_across_facebook/` to `.gitignore` before the first commit.
+- Vite proxies `/api` to the backend during development.
+
+### 2. Ingestion
+
+- `IChatParser` with an `HtmlChatParser` built on AngleSharp, leaving room for JSON later.
+- Domain types:
+  - `Chat(Id, Title, Participants, Messages)`
+  - `Message(Id, Sender, Text, SentAt?, Reactions, HasMedia)`
+  - `Reaction(Emoji, Reactor)`
+- Keep all CSS selectors in one place. Classes like `_a6-i` are auto-generated and could change in future exports.
+- Keep line breaks from `<br>` and decode HTML entities.
+- Split reactions with `StringInfo`, because some emoji are several code points.
+- Merge pages, then sort by `SentAt`.
+
+### 3. Upload and chat storage
+
+- `POST /api/chats` validates the files, parses them and stores the chat.
+- `ChatStore` wraps `IMemoryCache` with a 2-hour sliding expiry and a `SizeLimit` for the total memory cap.
+- Each entry is a `ChatSession`: the read-only `Chat`, the asked message IDs and a lock.
+- `DELETE /api/chats/current` removes it immediately.
+- The chat ID is a random GUID, so it can't be guessed.
+- ASP.NET's rate limiting middleware handles the per-IP upload limit.
+- A `ConcurrencyLimiter` wraps form reading and parsing, because it returns `503` where the middleware's one rejection code returns `429`.
+- `ExpiredChatSweeper` removes expired chats every minute, because the cache otherwise only does this when it's accessed.
+
+### 4. Message selection
+
+- `MessageSelector` takes `SelectionCriteria(MinLength = 30, MinReactions = 1)`.
+- Always exclude system lines, link-only messages and media-only messages.
+- If fewer than 50 messages qualify, drop the reaction requirement.
+- Pick a random sender first, then one of their messages. Otherwise the most talkative person is nearly always the answer.
+- Track asked message IDs per chat so questions don't repeat. Choosing a message and recording it happen under the chat's lock, so the two steps can't interleave.
+
+### 5. Question generation
+
+- `IQuestionGenerator`, so future question types plug in the same way.
+- `WhoSaidThisGenerator` picks up to 4 options: the real sender plus random other senders from the chat.
+- Shuffle the options so the answer's position gives nothing away.
+
+### 6. React front end
+
+Two screens:
+
+1. **Select a chat:** folder picker for one chat, keeping only its `message_*.html` files, with clear errors for a wrong folder or a rejected chat.
+2. **Quiz:** the message, a button per option, feedback with the answer, a running score and a next button.
+
+A "wipe my chat and exit" button calls the delete endpoint.
+
+The chat ID is kept in `sessionStorage`, so it survives a refresh but is cleared when the tab closes.
+
+### 7. Tests
+
+- Parser tests against a hand-written fixture covering plain text, reactions, media, a group photo block, an unreadable timestamp and multiple pages.
+- Selector tests for thresholds, the fallback, exclusions and non-repetition.
+- Generator tests confirming the answer is always among the options.
+- An API test for the upload-to-question path.
+- Isolation tests confirming one chat ID can't reach another chat, and a missing or wrong ID returns `401`.
+- A concurrency test confirming parallel question requests on one chat never repeat a message.
+- Limit tests for the memory cap and upload rate limit.
+- A manual check against the real export, run locally only.
+
+## Decisions
+
+| Decision | Why |
+|---|---|
+| One chat per upload | Only the chosen chat leaves the device, and the API is simpler with no session layer |
+| Player selects a chat's folder directly | The browser never reads the rest of the export, and there's no chat list screen to maintain |
+| Chats are held in memory only | Private messages should not be stored |
+| 2-hour idle expiry, rather than the server's lifetime | A long-running server would otherwise hold everyone's messages indefinitely |
+| Message text is never logged | Logs are written to disk, which would break the no-storage rule |
+| Multipart uploads are buffered in memory | ASP.NET writes uploads over 64 KB to temp files by default, which would break the no-storage rule |
+| Cached chats are never evicted to make room | A new upload gets `503` rather than deleting an active player's chat |
+| Answer buttons, not free text | Typed names would need fuzzy matching |
+| Answer returned with the question | Simplest option for a casual game |
+| Test fixtures are hand-written | Real messages must never enter the repository |
+| Chat ID in a header, not the URL | The ID acts as a password, and URLs reach browser history and request logs |
+| A secret ID rather than accounts | A short-lived game doesn't justify storing user identities |
+| One server instance | Chats exist only in the memory of the instance that received them |
+
+## Future work
+
+### Question types
+
+Each is a new `IQuestionGenerator`, scoped to the uploaded chat.
+
+| # | Question | Notes |
+|---|---|---|
+| 2 | When did they say that? | Needs `SentAt`. Multiple-choice dates or a closeness score. Skip messages with no timestamp. |
+| 3 | How long ago was the last use of [word]? | Needs a word index and a way to pick interesting words. |
+| 4 | Who used [word] the most? | Same word index. Filter out stop words, and require a clear winner. |
+| 5 | Who sent the most messages? | Simple count per sender. Only one question per chat, so vary it by month or year. |
+| 6 | Who received the most reactions? | Total reactions on each sender's messages. Consider a per-message rate as a variant. |
+| 7 | How many reactions did this message get? | Numeric guess, scored by closeness. Sample from messages with reactions, since most have none. |
+| 8 | Which of two messages had more reactions? | Pick pairs with different counts. |
+| 9 | Whose sentiment profile is this? | Compute sentiment per sender and show it without the name. See below. |
+
+**Sentiment (question 9):** run it locally, with a lexicon such as VADER or an ML.NET model. Sending messages to a third-party AI API would conflict with the privacy goal, so that option would need explicit player consent.
+
+### Ingestion
+
+- JSON export support through a second `IChatParser`.
+- Zip upload, unpacked in the browser so media still isn't sent.
+- Non-English exports, since system lines are matched in English only.
+- Parser-failure detection that reports an unsupported export format clearly.
+
+### Game
+
+- Quizzes that mix question types.
+- Difficulty settings driven by `SelectionCriteria`.
+- End-of-round summary and shareable score.
+- Multiplayer in one room, which would move answer checking to the server.
+
+### Hosting
+
+- HTTPS, so chats and chat IDs are encrypted in transit.
+- Serving the built client from the API, or a reverse proxy, since `/api` is only proxied in development.
+- Measuring real process memory under load. The server reached about 1 GB after parsing 64 chats back to back, but the 1 GB cap only counts estimated chat size, so it doesn't bound the whole process.
+- Correct client IP handling behind a proxy, or the per-IP limit would treat all users as one.
+- A privacy note explaining what is uploaded and when it's deleted.
+- Scaling past one instance, using sticky sessions or a shared in-memory store. A shared store must not write chats to disk.
