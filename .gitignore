@@ -1,0 +1,27 @@
+# Private message exports: never commit these
+your_activity_across_facebook/
+facebook-*/
+facebook-*.zip
+
+# .NET
+bin/
+obj/
+*.user
+TestResults/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# Local config
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.vs/
+.vscode/
+.idea/
+.DS_Store
