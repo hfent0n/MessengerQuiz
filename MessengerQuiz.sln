@@ -1,8 +1,51 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "server", "server", "{DAD03CFC-D5FA-AC94-41C7-9ABAB326F09E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MessengerQuiz.Api", "server\MessengerQuiz.Api\MessengerQuiz.Api.csproj", "{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MessengerQuiz.Tests", "server\MessengerQuiz.Tests\MessengerQuiz.Tests.csproj", "{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
 		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Debug|x64.Build.0 = Debug|Any CPU
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Debug|x86.Build.0 = Debug|Any CPU
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Release|Any CPU.Build.0 = Release|Any CPU
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Release|x64.ActiveCfg = Release|Any CPU
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Release|x64.Build.0 = Release|Any CPU
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Release|x86.ActiveCfg = Release|Any CPU
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404}.Release|x86.Build.0 = Release|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Debug|x64.Build.0 = Debug|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Debug|x86.Build.0 = Debug|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Release|x64.ActiveCfg = Release|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Release|x64.Build.0 = Release|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Release|x86.ActiveCfg = Release|Any CPU
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF}.Release|x86.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{60FD0E8B-5262-4E8D-9E7B-F9CDCD4BE404} = {DAD03CFC-D5FA-AC94-41C7-9ABAB326F09E}
+		{F1F6D6F9-108D-460E-B3C9-7541785FFEBF} = {DAD03CFC-D5FA-AC94-41C7-9ABAB326F09E}
 	EndGlobalSection
 EndGlobal
