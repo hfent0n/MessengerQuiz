@@ -30,10 +30,12 @@ internal static class FakeExport
         return Block(sender, $"<div></div><div>{encoded}</div><div></div><div></div>{Reactions(reactions)}", timestamp);
     }
 
-    public static string Photo(string sender, params string[] reactions)
+    public static string Photo(string sender, params string[] reactions) => PhotoAt(sender, DefaultTimestamp, reactions);
+
+    public static string PhotoAt(string sender, string timestamp, params string[] reactions)
     {
         var photo = """<div><div><a target="_blank" href="p.jpg"><img src="p.jpg" class="_a6_o _3-96" /></a><div></div></div></div>""";
-        return Block(sender, $"<div></div><div></div><div></div><div></div>{photo}{Reactions(reactions)}", DefaultTimestamp);
+        return Block(sender, $"<div></div><div></div><div></div><div></div>{photo}{Reactions(reactions)}", timestamp);
     }
 
     // The export's group photo entries have an image and no timestamp.
@@ -47,9 +49,9 @@ internal static class FakeExport
 
     public static string QuizzablePage(string title = "Test chat", int messagesPerSender = 6)
     {
-        var messages = new[] { "Ana", "Ben", "Cal" }.SelectMany(sender => Enumerable
-            .Range(0, messagesPerSender)
-            .Select(index => Message(sender, $"{sender} wrote a long enough message, number {index}.", reactions: "😆Ana")));
+        // Senders take turns, as in a real chat, so no message has same-sender context.
+        var messages = Enumerable.Range(0, messagesPerSender).SelectMany(index => new[] { "Ana", "Ben", "Cal" }
+            .Select(sender => Message(sender, $"{sender} wrote a long enough message, number {index}.", reactions: "😆Ana")));
 
         return Page(title, messages.ToArray());
     }

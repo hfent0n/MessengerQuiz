@@ -7,16 +7,41 @@ public sealed class MessageSelector(IOptions<QuizOptions> options)
 {
     private readonly QuizOptions _options = options.Value;
 
+    // The most-reacted share of quizzable messages, with at least MinPoolSize so small chats still get a quiz.
     public IReadOnlyList<Message> SelectEligible(Chat chat)
     {
-        var longEnough = chat.Messages
-            .Where(message => message.Text.Length >= _options.MinMessageLength)
-            .Where(message => !SystemMessages.IsSystemLine(message.Text) && !SystemMessages.IsLinkOnly(message.Text))
+        var candidates = chat.Messages.Where(IsQuizzable).ToList();
+        var topShare = (int)Math.Ceiling(candidates.Count * _options.TopReactionShare);
+        var poolSize = Math.Min(candidates.Count, Math.Max(topShare, _options.MinPoolSize));
+
+        // Many messages share a reaction count, so ties at the cut-off are broken randomly.
+        return candidates
+            .OrderByDescending(message => message.Reactions.Count)
+            .ThenBy(_ => Random.Shared.Next())
+            .Take(poolSize)
             .ToList();
+    }
 
-        var reacted = longEnough.Where(message => message.Reactions.Count >= _options.MinReactions).ToList();
+    // Earlier messages in the same sender's run, oldest first, in case the question needs them to make sense.
+    public IReadOnlyList<Message> PrecedingContext(Chat chat, int index)
+    {
+        var context = new List<Message>();
+        var later = chat.Messages[index];
 
-        return reacted.Count >= _options.MinPoolSize ? reacted : longEnough;
+        for (var position = index - 1; position >= 0 && context.Count < _options.MaxContextMessages; position--)
+        {
+            var earlier = chat.Messages[position];
+            if (earlier.Sender != later.Sender || SystemMessages.IsSystemLine(earlier.Text) || !WithinContextGap(earlier, later))
+            {
+                break;
+            }
+
+            context.Add(earlier);
+            later = earlier;
+        }
+
+        context.Reverse();
+        return context;
     }
 
     // Picks the sender first, so the most talkative person isn't nearly always the answer.
@@ -31,4 +56,14 @@ public sealed class MessageSelector(IOptions<QuizOptions> options)
         var messages = bySender[random.Next(bySender.Count)].ToList();
         return messages[random.Next(messages.Count)];
     }
+
+    private bool IsQuizzable(Message message) =>
+        message.Text.Length >= _options.MinMessageLength
+        && !SystemMessages.IsSystemLine(message.Text)
+        && !SystemMessages.IsLinkOnly(message.Text);
+
+    private bool WithinContextGap(Message earlier, Message later) =>
+        earlier.SentAt is { } earlierTime
+        && later.SentAt is { } laterTime
+        && laterTime - earlierTime <= _options.ContextGap;
 }

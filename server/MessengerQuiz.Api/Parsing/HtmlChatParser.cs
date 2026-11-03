@@ -18,7 +18,8 @@ public sealed class HtmlChatParser : IChatParser
     // Inside the content wrapper, the second div holds the text. Later divs hold media and reactions.
     private const int TextDivIndex = 1;
 
-    private static readonly string[] TimestampFormats = ["MMM d, yyyy h:mm:sstt"];
+    // Older exports write "9:05:03pm" and newer ones "9:05:03 pm".
+    private static readonly string[] TimestampFormats = ["MMM d, yyyy h:mm:sstt", "MMM d, yyyy h:mm:ss tt"];
 
     public async Task<Chat> ParseAsync(IReadOnlyList<ChatPage> pages, CancellationToken cancellationToken)
     {
@@ -45,7 +46,8 @@ public sealed class HtmlChatParser : IChatParser
             }
 
             titles.Add(document.Title?.Trim() ?? "");
-            messages.AddRange(document.QuerySelectorAll(MessageBlockSelector).Select(ParseBlock).OfType<ParsedMessage>());
+            // Pages list messages newest first. Reversing keeps same-second messages in sending order after sorting.
+            messages.AddRange(document.QuerySelectorAll(MessageBlockSelector).Select(ParseBlock).OfType<ParsedMessage>().Reverse());
         }
 
         if (titles.Count > 1)

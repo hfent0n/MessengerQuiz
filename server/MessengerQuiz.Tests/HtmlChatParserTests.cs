@@ -71,6 +71,17 @@ public class HtmlChatParserTests
         Assert.Single(chat.Messages);
     }
 
+    [Theory]
+    [InlineData("Dec 12, 2023 9:05:03pm")]
+    [InlineData("Dec 12, 2023 9:05:03 pm")]
+    [InlineData("Dec 12, 2023 9:05:03 PM")]
+    public async Task ParsesOldAndNewTimestampFormats(string timestamp)
+    {
+        var chat = await Parse(FakeExport.Page("Friends", FakeExport.Message("Ana", "Hello", timestamp)));
+
+        Assert.Equal(new DateTime(2023, 12, 12, 21, 5, 3), chat.Messages.Single().SentAt);
+    }
+
     [Fact]
     public async Task UnreadableTimestampBecomesNull()
     {
@@ -89,6 +100,18 @@ public class HtmlChatParserTests
 
         Assert.Equal(["oldest", "newest"], chat.Messages.Select(message => message.Text));
         Assert.Equal(2, chat.Messages.Select(message => message.Id).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task KeepsSameSecondMessagesInSendingOrder()
+    {
+        // The export lists messages newest first.
+        var chat = await Parse(FakeExport.Page(
+            "Friends",
+            FakeExport.Message("Ana", "second"),
+            FakeExport.Message("Ana", "first")));
+
+        Assert.Equal(["first", "second"], chat.Messages.Select(message => message.Text));
     }
 
     [Fact]

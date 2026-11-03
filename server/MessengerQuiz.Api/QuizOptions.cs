@@ -12,10 +12,18 @@ public sealed class QuizOptions
     public int UploadsPerMinutePerIp { get; set; } = 5;
 
     public int MinMessageLength { get; set; } = 30;
-    public int MinReactions { get; set; } = 1;
 
-    // Below this many messages, the reaction requirement is dropped.
+    // Questions come from this share of messages, ranked by reaction count.
+    public double TopReactionShare { get; set; } = 0.05;
+
+    // Small chats use this many top messages instead, so they still get a quiz.
     public int MinPoolSize { get; set; } = 50;
+
+    // Up to this many earlier messages from the same sender are shown as context.
+    public int MaxContextMessages { get; set; } = 3;
+
+    // Each context message must be within this time of the next one.
+    public TimeSpan ContextGap { get; set; } = TimeSpan.FromMinutes(2);
 
     // Below this many messages, the chat is rejected as too small to quiz on.
     public int MinQuizMessages { get; set; } = 10;

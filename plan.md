@@ -40,7 +40,9 @@ Measured against a real export of 64 chats and 102,779 messages.
 | The largest chat is under 15 MB of HTML | A single-chat upload fits comfortably in one request |
 | 10,000 messages per file, newest first, up to 4 files per chat | All of a chat's pages are merged, then sorted by time |
 | Median chat has 60 messages and 2 senders; only 10 chats have 500+ messages and 3+ senders | The server rejects chats too small to quiz on |
-| About 80% of messages have no reactions | The reaction filter needs a fallback |
+| About 80% of messages have no reactions, so many messages tie at any cut-off | Ties at the top 5% cut-off are broken randomly |
+| 44% of top messages follow one or more messages from the same sender, and about 7% follow 3 or more | Questions show up to 3 earlier messages as context |
+| About 1% of consecutive messages share a timestamp | Same-second messages keep their sending order |
 | System lines look like normal messages ("X reacted ❤ to…", "joined the call"), roughly 680 found | They must be filtered out, or they give away the answer |
 | 21 blocks have no timestamp, and all are group photo entries with only an image | The parser skips them because they aren't messages |
 | Timestamps are in the export's language | `SentAt` is nullable, so another format doesn't reject the chat |
@@ -49,7 +51,22 @@ Measured against a real export of 64 chats and 102,779 messages.
 | Timestamps have no time zone | Treat them as local time |
 | This export covers Dec 2022 to Dec 2023 only | Time-based questions are limited to the exported range |
 
-Message counts passing the filters, out of about 99,000 text messages (system lines excluded by an approximate, English-only pattern):
+### Reaction cut-off
+
+Questions come from the top 5% of quizzable messages by reaction count. Quizzable means 30+ characters and not a system line or bare link.
+
+| Chat size | Quizzable | Top 5% | Reactions at the cut-off | Messages with at least that many |
+|---|---|---|---|---|
+| 35,683 | 14,968 | 749 | 3 | 798 |
+| 18,759 | 9,713 | 486 | 2 | 924 |
+| 12,110 | 4,999 | 250 | 2 | 263 |
+| 8,186 | 3,824 | 192 | 1 | 658 |
+
+In 50 of 59 chats with quizzable messages, the top 5% is fewer than 50 messages, often 3 to 10. Small chats therefore use their top 50 messages instead.
+
+### Earlier filter counts
+
+Message counts passing the original filters, out of about 99,000 text messages (system lines excluded by an approximate, English-only pattern):
 
 | Minimum length | Any reactions | 1+ reactions | 2+ reactions |
 |---|---|---|---|
@@ -108,6 +125,10 @@ Kestrel's default body limit is 30 MB. The endpoint sets its own 50 MB limit, so
 {
   "messageId": "m_1042",
   "text": "...",
+  "context": [
+    { "text": "Earlier message from the same sender", "hasMedia": false },
+    { "text": "", "hasMedia": true }
+  ],
   "options": ["A", "B", "C", "D"],
   "answer": "B",
   "reactions": 3
@@ -181,9 +202,11 @@ MessengerQuiz/
 
 ### 4. Message selection
 
-- `MessageSelector` takes `SelectionCriteria(MinLength = 30, MinReactions = 1)`.
-- Always exclude system lines, link-only messages and media-only messages.
-- If fewer than 50 messages qualify, drop the reaction requirement.
+- Candidates are messages with 30+ characters, excluding system lines, link-only messages and media-only messages.
+- The pool is the top 5% of candidates by reaction count, or the top 50 if that's larger, capped at the number of candidates.
+- Ties at the cut-off are broken randomly.
+- Each question includes up to 3 earlier messages from the same sender, oldest first. The run stops at another sender, a system line, or a gap over 5 minutes. Media-only messages appear as a placeholder.
+- Context messages are marked as asked, because a player who has seen them knows who sent them.
 - Pick a random sender first, then one of their messages. Otherwise the most talkative person is nearly always the answer.
 - Track asked message IDs per chat so questions don't repeat. Choosing a message and recording it happen under the chat's lock, so the two steps can't interleave.
 
@@ -198,7 +221,7 @@ MessengerQuiz/
 Two screens:
 
 1. **Select a chat:** folder picker for one chat, keeping only its `message_*.html` files, with clear errors for a wrong folder or a rejected chat.
-2. **Quiz:** the message, a button per option, feedback with the answer, a running score and a next button.
+2. **Quiz:** the message with any earlier context, a button per option, feedback with the answer, a running score and a next button.
 
 A "wipe my chat and exit" button calls the delete endpoint.
 
@@ -220,6 +243,8 @@ The chat ID is kept in `sessionStorage`, so it survives a refresh but is cleared
 | Decision | Why |
 |---|---|
 | One chat per upload | Only the chosen chat leaves the device, and the API is simpler with no session layer |
+| Top 5% by reactions, with a floor of 50 | Strict 5% would leave most chats with only a handful of questions |
+| Context is the same sender's run only | It answers "what were they talking about?" without giving away other people's replies |
 | Player selects a chat's folder directly | The browser never reads the rest of the export, and there's no chat list screen to maintain |
 | Chats are held in memory only | Private messages should not be stored |
 | 2-hour idle expiry, rather than the server's lifetime | A long-running server would otherwise hold everyone's messages indefinitely |

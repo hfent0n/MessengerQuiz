@@ -31,6 +31,56 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
     }
 
     [Fact]
+    public async Task QuestionsIncludeEarlierMessagesFromTheSameSender()
+    {
+        var client = _factory.CreateClient();
+        // Newest first, as in the export. Ana sends two messages in a row and Ben replies.
+        var messages = Enumerable.Range(0, 12).SelectMany(index => new[]
+        {
+            FakeExport.Message("Ben", $"Ben replied with a long enough message, number {index}.", $"Mar 1, 2023 {index + 1}:02:00pm"),
+            FakeExport.Message("Ana", $"Ana followed up with a long enough message {index}.", $"Mar 1, 2023 {index + 1}:01:00pm", "😆Ben", "😮Cal"),
+            FakeExport.Message("Ana", $"Ana opened with context {index}", $"Mar 1, 2023 {index + 1}:00:00pm"),
+        }).Reverse().ToArray();
+        var chat = await Upload(client, FakeExport.Page("Context", messages));
+
+        var question = await GetQuestion(client, chat.ChatId);
+        while (question.Answer != "Ana")
+        {
+            question = await GetQuestion(client, chat.ChatId);
+        }
+
+        Assert.StartsWith("Ana followed up", question.Text);
+        Assert.StartsWith("Ana opened with context", Assert.Single(question.Context).Text);
+    }
+
+    [Fact]
+    public async Task QuestionsIncludeSeveralContextMessagesInOrder()
+    {
+        var client = _factory.CreateClient();
+        // Ana's context lines are too short to be questions, so her only questions have three messages of context.
+        var messages = Enumerable.Range(0, 12).SelectMany(index => new[]
+        {
+            FakeExport.Message("Ana", $"First {index}", $"Mar 1, 2023 {index + 1}:00:00pm"),
+            FakeExport.PhotoAt("Ana", $"Mar 1, 2023 {index + 1}:01:00pm"),
+            FakeExport.Message("Ana", $"Third {index}", $"Mar 1, 2023 {index + 1}:02:00pm"),
+            FakeExport.Message("Ana", $"Ana finished with a long enough message {index}.", $"Mar 1, 2023 {index + 1}:03:00pm", "😆Ben"),
+            FakeExport.Message("Ben", $"Ben replied with a long enough message, number {index}.", $"Mar 1, 2023 {index + 1}:04:00pm"),
+        }).Reverse().ToArray();
+        var chat = await Upload(client, FakeExport.Page("Context", messages));
+
+        var question = await GetQuestion(client, chat.ChatId);
+        while (question.Answer != "Ana")
+        {
+            question = await GetQuestion(client, chat.ChatId);
+        }
+
+        var index = question.Text.Split(' ').Last().TrimEnd('.');
+        Assert.Equal(
+            [new ContextMessage($"First {index}", false), new ContextMessage("", true), new ContextMessage($"Third {index}", false)],
+            question.Context);
+    }
+
+    [Fact]
     public async Task OneChatIdNeverReachesAnotherChat()
     {
         var client = _factory.CreateClient();

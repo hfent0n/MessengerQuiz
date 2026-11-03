@@ -77,8 +77,15 @@ export default function QuizScreen({ chat, onWipe, onExpired }: Props) {
 
       {(round.status === 'asking' || round.status === 'answered') && (
         <>
-          <p className="prompt">Who said this?</p>
-          <blockquote className="message">{round.question.text}</blockquote>
+          <p className="prompt">{round.question.context.length > 0 ? 'Who sent these messages?' : 'Who said this?'}</p>
+          <div className="thread">
+            {round.question.context.map((message, index) => (
+              <p key={index} className={message.text ? 'message context' : 'message context media'}>
+                {message.text || 'Sent a photo or video'}
+              </p>
+            ))}
+            <blockquote className="message">{round.question.text}</blockquote>
+          </div>
           <div className="options">
             {round.question.options.map((option) => (
               <button

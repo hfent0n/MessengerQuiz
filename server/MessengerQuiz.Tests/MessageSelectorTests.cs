@@ -8,32 +8,63 @@ namespace MessengerQuiz.Tests;
 public class MessageSelectorTests
 {
     private const string LongText = "This message is comfortably long enough to use.";
+    private static readonly DateTime Start = new(2023, 6, 1, 12, 0, 0);
 
-    private readonly MessageSelector _selector = new(Options.Create(new QuizOptions
-    {
-        MinMessageLength = 30,
-        MinReactions = 1,
-        MinPoolSize = 3,
-    }));
+    private readonly MessageSelector _selector = Selector();
 
     [Fact]
-    public void RequiresLengthAndReactionsWhenThePoolIsBigEnough()
+    public void TakesTheMostReactedShareOfMessages()
     {
-        var keep = Enumerable.Range(0, 3).Select(index => Create(LongText + index, reactions: 1));
-        var chat = Chat([.. keep, Create(LongText, reactions: 0), Create("Too short", reactions: 5)]);
+        var selector = Selector(topShare: 0.1, minPoolSize: 1);
+        var messages = Enumerable.Range(0, 100).Select(index => Create(LongText, reactions: index)).ToList();
 
-        var eligible = _selector.SelectEligible(chat);
+        var eligible = selector.SelectEligible(Chat(messages));
 
-        Assert.Equal(3, eligible.Count);
-        Assert.All(eligible, message => Assert.NotEmpty(message.Reactions));
+        Assert.Equal(Enumerable.Range(90, 10).Reverse(), eligible.Select(message => message.Reactions.Count));
     }
 
     [Fact]
-    public void DropsTheReactionRequirementWhenThePoolIsTooSmall()
+    public void SmallChatsGetAtLeastTheMinimumPool()
     {
-        var chat = Chat([Create(LongText, reactions: 1), Create(LongText, reactions: 0), Create("Too short", reactions: 5)]);
+        var selector = Selector(topShare: 0.05, minPoolSize: 20);
+        var messages = Enumerable.Range(0, 100).Select(index => Create(LongText, reactions: index)).ToList();
 
-        Assert.Equal(2, _selector.SelectEligible(chat).Count);
+        var eligible = selector.SelectEligible(Chat(messages));
+
+        Assert.Equal(20, eligible.Count);
+        Assert.All(eligible, message => Assert.True(message.Reactions.Count >= 80));
+    }
+
+    [Fact]
+    public void PoolNeverExceedsTheCandidates()
+    {
+        var selector = Selector(topShare: 0.05, minPoolSize: 50);
+
+        Assert.Equal(3, selector.SelectEligible(Chat([Create(LongText), Create(LongText), Create(LongText)])).Count);
+    }
+
+    [Fact]
+    public void BreaksTiesAtTheCutOffRandomly()
+    {
+        var selector = Selector(topShare: 0.5, minPoolSize: 1);
+        var tied = Enumerable.Range(0, 10).Select(_ => Create(LongText, reactions: 1)).ToList();
+        var chat = Chat([Create(LongText, reactions: 5), .. tied]);
+
+        var chosen = Enumerable.Range(0, 200)
+            .SelectMany(_ => selector.SelectEligible(chat))
+            .Where(message => message.Reactions.Count == 1)
+            .Select(message => message.Id)
+            .ToHashSet();
+
+        Assert.Equal(10, chosen.Count);
+    }
+
+    [Fact]
+    public void ExcludesShortMessagesBeforeRanking()
+    {
+        var chat = Chat([Create("Too short", reactions: 50), Create(LongText, reactions: 0)]);
+
+        Assert.Equal(LongText, Assert.Single(_selector.SelectEligible(chat)).Text);
     }
 
     [Theory]
@@ -64,6 +95,82 @@ public class MessageSelectorTests
     }
 
     [Fact]
+    public void ContextIsTheSendersEarlierRunOldestFirst()
+    {
+        var chat = Chat([
+            Create("Ben", sender: "Ben", minute: 0),
+            Create("one", minute: 1),
+            Create("two", minute: 2),
+            Create("question", minute: 3),
+        ]);
+
+        Assert.Equal(["one", "two"], _selector.PrecedingContext(chat, 3).Select(message => message.Text));
+    }
+
+    [Fact]
+    public void ContextStopsAtTheMaximum()
+    {
+        var selector = Selector(maxContext: 2);
+        var chat = Chat([Create("one", minute: 0), Create("two", minute: 1), Create("three", minute: 2), Create("question", minute: 3)]);
+
+        Assert.Equal(["two", "three"], selector.PrecedingContext(chat, 3).Select(message => message.Text));
+    }
+
+    [Fact]
+    public void ContextGapAppliesBetweenEachPairNotTheWholeRun()
+    {
+        // Each message is 4 minutes after the last, so the run spans 12 minutes.
+        var chat = Chat([Create("one", minute: 0), Create("two", minute: 4), Create("three", minute: 8), Create("question", minute: 12)]);
+
+        Assert.Equal(["one", "two", "three"], _selector.PrecedingContext(chat, 3).Select(message => message.Text));
+    }
+
+    [Fact]
+    public void DefaultsToThreeContextMessages()
+    {
+        var selector = new MessageSelector(Options.Create(new QuizOptions()));
+        var chat = Chat([.. Enumerable.Range(0, 5).Select(minute => Create($"earlier {minute}", minute: minute)), Create("question", minute: 5)]);
+
+        Assert.Equal(["earlier 2", "earlier 3", "earlier 4"], selector.PrecedingContext(chat, 5).Select(message => message.Text));
+    }
+
+    [Fact]
+    public void ContextStopsAtALongGap()
+    {
+        var chat = Chat([Create("old", minute: 0), Create("recent", minute: 30), Create("question", minute: 32)]);
+
+        Assert.Equal(["recent"], _selector.PrecedingContext(chat, 2).Select(message => message.Text));
+    }
+
+    [Fact]
+    public void ContextStopsAtASystemLine()
+    {
+        var chat = Chat([
+            Create("before", minute: 0),
+            Create("Ana Smith named the group Weekend", minute: 1),
+            Create("question", minute: 2),
+        ]);
+
+        Assert.Empty(_selector.PrecedingContext(chat, 2));
+    }
+
+    [Fact]
+    public void ContextIncludesMediaMessages()
+    {
+        var chat = Chat([Create("", minute: 0, hasMedia: true), Create("question", minute: 1)]);
+
+        Assert.True(Assert.Single(_selector.PrecedingContext(chat, 1)).HasMedia);
+    }
+
+    [Fact]
+    public void NoContextWithoutTimestamps()
+    {
+        var chat = Chat([Create("one"), Create("question")]);
+
+        Assert.Empty(_selector.PrecedingContext(chat, 1));
+    }
+
+    [Fact]
     public void PickBalancedGivesQuietSendersAFairShare()
     {
         var candidates = Enumerable.Range(0, 99).Select(_ => Create(LongText, sender: "Loud"))
@@ -83,11 +190,28 @@ public class MessageSelectorTests
         Assert.Null(MessageSelector.PickBalanced([], new Random(1)));
     }
 
-    private static Chat Chat(IReadOnlyList<Message> messages) => new("Test", ["Ana"], messages);
+    private static MessageSelector Selector(double topShare = 0.05, int minPoolSize = 50, int maxContext = 3)
+    {
+        return new MessageSelector(Options.Create(new QuizOptions
+        {
+            MinMessageLength = 30,
+            TopReactionShare = topShare,
+            MinPoolSize = minPoolSize,
+            MaxContextMessages = maxContext,
+            ContextGap = TimeSpan.FromMinutes(5),
+        }));
+    }
 
-    private static Message Create(string text, int reactions = 0, string sender = "Ana")
+    private static Chat Chat(IReadOnlyList<Message> messages) => new("Test", ["Ana", "Ben"], messages);
+
+    private static Message Create(
+        string text,
+        int reactions = 0,
+        string sender = "Ana",
+        int? minute = null,
+        bool hasMedia = false)
     {
         var reactionList = Enumerable.Range(0, reactions).Select(_ => new Reaction("😆", "Ben")).ToList();
-        return new Message(Guid.NewGuid().ToString(), sender, text, null, reactionList, false);
+        return new Message(Guid.NewGuid().ToString(), sender, text, minute is { } m ? Start.AddMinutes(m) : null, reactionList, hasMedia);
     }
 }

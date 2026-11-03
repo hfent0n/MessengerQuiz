@@ -6,9 +6,16 @@ export type UploadedChat = {
   eligibleCount: number
 }
 
+export type ContextMessage = {
+  text: string
+  hasMedia: boolean
+}
+
 export type Question = {
   messageId: string
   text: string
+  // Earlier messages from the same sender, oldest first.
+  context: ContextMessage[]
   options: string[]
   answer: string
   reactions: number
