@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { ActiveChat } from '../activeChat'
 import { ApiError, nextQuestion, type ContextMessage, type Question } from '../api'
+import type { ExportFile } from '../chatFiles'
 import ChatPhoto from '../components/ChatPhoto'
 
 type Props = {
   chat: ActiveChat
-  photos: ReadonlyMap<string, File>
+  photos: ReadonlyMap<string, ExportFile>
   onWipe: () => void
   onExpired: () => void
 }
@@ -121,7 +122,7 @@ export default function QuizScreen({ chat, photos, onWipe, onExpired }: Props) {
   )
 }
 
-function ContextBubble({ message, photos }: { message: ContextMessage; photos: ReadonlyMap<string, File> }) {
+function ContextBubble({ message, photos }: { message: ContextMessage; photos: ReadonlyMap<string, ExportFile> }) {
   if (message.photos.length === 0 && !message.text) {
     return <p className="message context media">Sent a photo or video</p>
   }

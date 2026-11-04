@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -254,6 +255,41 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
     }
 
     [Fact]
+    public async Task AcceptsGzippedPages()
+    {
+        var response = await Post(_factory.CreateClient(), FakeExport.QuizzablePage("Zipped"), gzip: true);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal("Zipped", (await response.Content.ReadFromJsonAsync<ChatCreated>())!.Title);
+    }
+
+    [Fact]
+    public async Task RejectsGzippedPagesThatAreTooLargeOnceDecompressed()
+    {
+        var client = _factory
+            .WithWebHostBuilder(builder => builder.UseSetting("Quiz:MaxPagesBytes", "1024"))
+            .CreateClient();
+
+        // Repetitive HTML compresses well, so the upload itself stays small.
+        var page = FakeExport.QuizzablePage(messagesPerSender: 200);
+        var response = await Post(client, page, gzip: true);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RejectsBrokenGzipData()
+    {
+        var client = _factory.CreateClient();
+        var content = new ByteArrayContent([0x1f, 0x8b, 1, 2, 3, 4]);
+        var form = new MultipartFormDataContent { { content, "files", "chat/message_1.html" } };
+
+        var response = await client.PostAsync("/api/chats", form);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task RateLimitsUploadsPerIp()
     {
         var client = _factory
@@ -298,10 +334,12 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
             .ToArray();
     }
 
-    private static async Task<HttpResponseMessage> Post(HttpClient client, string html, string? photos = null)
+    private static async Task<HttpResponseMessage> Post(
+        HttpClient client, string html, string? photos = null, bool gzip = false)
     {
-        var content = new ByteArrayContent(Encoding.UTF8.GetBytes(html));
-        content.Headers.ContentType = new MediaTypeHeaderValue("text/html");
+        var bytes = Encoding.UTF8.GetBytes(html);
+        var content = new ByteArrayContent(gzip ? Gzip(bytes) : bytes);
+        content.Headers.ContentType = new MediaTypeHeaderValue(gzip ? "application/gzip" : "text/html");
         var form = new MultipartFormDataContent { { content, "files", "chat/message_1.html" } };
         if (photos is not null)
         {
@@ -309,6 +347,17 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
         }
 
         return await client.PostAsync("/api/chats", form);
+    }
+
+    private static byte[] Gzip(byte[] bytes)
+    {
+        using var output = new MemoryStream();
+        using (var gzip = new GZipStream(output, CompressionLevel.Optimal))
+        {
+            gzip.Write(bytes);
+        }
+
+        return output.ToArray();
     }
 
     private static async Task<ChatCreated> Upload(HttpClient client, string html, string? photos = null)

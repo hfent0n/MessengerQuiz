@@ -63,10 +63,24 @@ public static class ChatEndpoints
             return Problem(StatusCodes.Status400BadRequest, "The list of photos couldn't be read.");
         }
 
-        var streams = form.Files.Select(file => (file.FileName, Stream: file.OpenReadStream())).ToList();
+        var decompressor = new PageDecompressor(quiz.MaxPagesBytes);
+        var streams = new List<Stream>();
         try
         {
-            var pages = streams.Select(file => new ChatPage(file.FileName, file.Stream)).ToList();
+            var pages = new List<ChatPage>();
+            foreach (var file in form.Files)
+            {
+                var upload = file.OpenReadStream();
+                streams.Add(upload);
+                var page = await decompressor.OpenAsync(upload, context.RequestAborted);
+                if (page != upload)
+                {
+                    streams.Add(page);
+                }
+
+                pages.Add(new ChatPage(file.FileName, page));
+            }
+
             var chat = (await parser.ParseAsync(pages, context.RequestAborted)).KeepPhotos(availablePhotos);
             var eligible = selector.SelectEligible(chat);
 
@@ -87,13 +101,21 @@ public static class ChatEndpoints
                 "/api/chats/current",
                 new ChatCreatedResponse(session.Id, chat.Title, chat.Participants, chat.Messages.Count, eligible.Count));
         }
+        catch (ChatTooLargeException)
+        {
+            return Problem(StatusCodes.Status413PayloadTooLarge, "This chat is too large to upload.");
+        }
+        catch (InvalidDataException)
+        {
+            return Problem(StatusCodes.Status400BadRequest, "A chat file couldn't be decompressed.");
+        }
         catch (ChatParseException exception)
         {
             return Problem(StatusCodes.Status400BadRequest, exception.Message);
         }
         finally
         {
-            streams.ForEach(file => file.Stream.Dispose());
+            streams.ForEach(stream => stream.Dispose());
         }
     }
 

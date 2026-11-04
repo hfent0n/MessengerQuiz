@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { loadActiveChat, saveActiveChat, type ActiveChat } from './activeChat'
 import { deleteChat } from './api'
+import type { ExportFile } from './chatFiles'
 import { releasePhotoUrls } from './photoUrls'
 import QuizScreen from './screens/QuizScreen'
 import SelectChatScreen from './screens/SelectChatScreen'
@@ -8,7 +9,7 @@ import SelectChatScreen from './screens/SelectChatScreen'
 export default function App() {
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(loadActiveChat)
   // Files can't be stored, so photos are lost on refresh until the chat is chosen again.
-  const [photos, setPhotos] = useState<ReadonlyMap<string, File>>(new Map())
+  const [photos, setPhotos] = useState<ReadonlyMap<string, ExportFile>>(new Map())
 
   const changeActiveChat = useCallback((chat: ActiveChat | null) => {
     saveActiveChat(chat)
@@ -17,7 +18,7 @@ export default function App() {
 
   const clearActiveChat = useCallback(() => changeActiveChat(null), [changeActiveChat])
 
-  function handleUploaded(chat: ActiveChat, chatPhotos: ReadonlyMap<string, File>) {
+  function handleUploaded(chat: ActiveChat, chatPhotos: ReadonlyMap<string, ExportFile>) {
     releasePhotoUrls()
     setPhotos(chatPhotos)
     changeActiveChat(chat)

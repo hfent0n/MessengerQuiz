@@ -236,3 +236,58 @@ code {
 .result {
   margin-top: 16px;
 }
+
+.link.busy {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.chat-filter {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.chat-list {
+  max-height: 420px;
+  margin: 12px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.chat-list li + li {
+  margin-top: 8px;
+}
+
+.chat-option {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-option:hover {
+  border-color: var(--accent);
+}
+
+.chat-name {
+  display: block;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.chat-option .note {
+  display: block;
+}
+
+.photo-loading {
+  display: block;
+  color: var(--muted);
+}

@@ -18,9 +18,9 @@ public sealed class HtmlChatParser : IChatParser
     // Inside the content wrapper, the second div holds the text. Later divs hold media and reactions.
     private const int TextDivIndex = 1;
 
-    // Older exports write "9:05:03pm" and newer ones "9:05:03 pm".
     private const string PhotoFolder = "photos/";
 
+    // Older exports write "9:05:03pm" and newer ones "9:05:03 pm".
     private static readonly string[] TimestampFormats = ["MMM d, yyyy h:mm:sstt", "MMM d, yyyy h:mm:ss tt"];
 
     public async Task<Chat> ParseAsync(IReadOnlyList<ChatPage> pages, CancellationToken cancellationToken)

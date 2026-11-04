@@ -28,6 +28,14 @@ Run the backend tests:
 dotnet test MessengerQuiz.sln
 ```
 
+Run the client tests:
+
+```bash
+npm test --prefix client
+```
+
+The `api-alt` and `client-alt` launch configurations run a second copy on ports 5257 and 5175. The client's `API_URL` variable points its `/api` proxy at a different API.
+
 Limits are in `QuizOptions` and can be overridden through configuration, for example `Quiz__UploadsPerMinutePerIp=20`.
 
 ## What the export looks like
@@ -49,6 +57,9 @@ Measured against a real export of 64 chats and 102,779 messages.
 | About 10% of messages are photos, and 40% of photo messages got reactions | Photos can be questions too |
 | Only about 38% of referenced photo files are in the download | Photo questions only use files the player's folder contains |
 | One chat folder held 128 MB of photos, 432 MB of GIFs and 1.1 GB of video | Media can't be uploaded as part of a chat |
+| The Nov 2026 export came as three zips of about 2.3 GB each. One chat's pages were in one zip, and its photos were split across all three (1,196, 1,468 and 542) | The browser reads every zip and merges each chat's files |
+| Photos in the zips are stored uncompressed, and pages are deflated | One photo can be read from a zip without unpacking the rest |
+| One chat's 11.8 MB of HTML gzips to 1.3 MB | Pages are gzipped before upload |
 | Message text is always in the second inner `div` | Reading only that `div` excludes media captions and link previews |
 | The participants header only appears on group chats | Participants come from message senders instead |
 | Timestamps have no time zone | Treat them as local time |
@@ -79,12 +90,12 @@ Message counts passing the original filters, out of about 99,000 text messages (
 
 ## Flow
 
-1. The player opens `messages/inbox` in their export and selects one chat's folder.
-2. The browser posts only that chat's `message_*.html` files and the names of the photos in its `photos` folder. Images, GIFs and videos never leave the device.
+1. The player chooses every zip from their export at once. The browser reads only each zip's file index and lists the chats found under `messages/<section>/<chat>/`, merging each chat's files across zips.
+2. The player picks a chat. The browser gzips that chat's `message_*.html` files and posts them with the names of its photos. Images, GIFs and videos never leave the device, and photos are read out of the zip only when a question shows them.
 3. The server parses them, holds the result in memory and returns a secret chat ID.
 4. The quiz sends that chat ID in a header on each request.
 
-If the folder has no message pages directly inside it, such as `inbox` or `messages`, the browser shows an error and uploads nothing. If a chat is too small to quiz on, the server says so and the player can choose another.
+An unzipped chat folder can still be chosen instead. If it has no message pages directly inside it, such as `inbox` or `messages`, the browser shows an error and uploads nothing. If the zips hold no chats, for example a JSON export, the browser says so. If a chat is too small to quiz on, the server says so and the player can choose another.
 
 ## API
 
@@ -98,7 +109,7 @@ The `GET` and `DELETE` routes identify the chat with an `X-Chat-Id` header. The 
 
 ### `POST /api/chats`
 
-Multipart form with one or more `message_*.html` files, all from the same chat, and an optional `photos` field. That field is a JSON array of the photo paths present in the folder, such as `["photos/123.jpg"]`. The server only asks photo questions about these, because exports often leave out older media.
+Multipart form with one or more `message_*.html` files, all from the same chat, and an optional `photos` field. Each file may be gzipped, which the server detects from its first two bytes. Decompressed pages are limited to 100 MB in total, so a small upload can't expand into a huge one. That field is a JSON array of the photo paths present in the folder, such as `["photos/123.jpg"]`. The server only asks photo questions about these, because exports often leave out older media.
 
 ```json
 {
@@ -115,8 +126,9 @@ Multipart form with one or more `message_*.html` files, all from the same chat, 
 | `201` | The chat was parsed |
 | `400` | No files, or a file isn't a recognisable Messenger page |
 | `400` | The `photos` field isn't a JSON array of strings, or lists more than 50,000 paths |
+| `400` | A gzipped file is corrupt |
 | `400` | The files come from different chats, based on the page title and participants |
-| `413` | The upload is over the 50 MB limit |
+| `413` | The upload is over the 50 MB limit, or its pages are over 100 MB once decompressed |
 | `422` | The chat has fewer than 2 senders or too few eligible messages |
 | `429` | The IP address has hit the upload rate limit |
 | `503` | The server's memory cap is reached, or too many chats are already being parsed |
@@ -226,7 +238,7 @@ MessengerQuiz/
 
 Two screens:
 
-1. **Select a chat:** folder picker for one chat, keeping only its `message_*.html` files, with clear errors for a wrong folder or a rejected chat.
+1. **Select a chat:** a zip picker that lists the export's chats with a search box, or a folder picker for one unzipped chat. Clear errors for zips with no chats, a wrong folder or a rejected chat.
 2. **Quiz:** the message with any earlier context, a button per option, feedback with the answer, a running score and a next button.
 
 A "wipe my chat and exit" button calls the delete endpoint.
@@ -242,6 +254,8 @@ The chat ID is kept in `sessionStorage`, so it survives a refresh but is cleared
 - Isolation tests confirming one chat ID can't reach another chat, and a missing or wrong ID returns `401`.
 - A concurrency test confirming parallel question requests on one chat never repeat a message.
 - Limit tests for the memory cap and upload rate limit.
+- Gzip tests for a gzipped upload, the decompressed size limit and corrupt data.
+- Client tests for merging chats across zips, duplicate files, sections and non-photo media.
 - A manual check against the real export, run locally only.
 
 ## Decisions
@@ -253,7 +267,10 @@ The chat ID is kept in `sessionStorage`, so it survives a refresh but is cleared
 | Context is the same sender's run only | It answers "what were they talking about?" without giving away other people's replies |
 | Photos are shown from the player's own files | No upload size problem, no extra server memory, and no photo or its location data leaves the device |
 | Photos aren't restored after a refresh | Browsers can't keep file access across reloads, so photos show a note asking the player to choose the chat again |
-| Player selects a chat's folder directly | The browser never reads the rest of the export, and there's no chat list screen to maintain |
+| Player chooses the export's zips, then a chat | A chat's photos are split across zips, and players don't have to unzip gigabytes to find one folder |
+| Zips are read in the browser with `@zip.js/zip.js` | It reads only the index and the entries needed, so multi-gigabyte zips aren't loaded into memory. It's loaded only when zips are chosen |
+| Pages are gzipped, not parsed in the browser | Gzip makes uploads about 9 times smaller while the server keeps the only parser. Sending parsed JSON would be smaller still, but the server would have to trust the client's parsing |
+| All of a chat's photo names are sent | They're a small part of the upload, and the server keeps only those the pages mention |
 | Chats are held in memory only | Private messages should not be stored |
 | 2-hour idle expiry, rather than the server's lifetime | A long-running server would otherwise hold everyone's messages indefinitely |
 | Message text is never logged | Logs are written to disk, which would break the no-storage rule |
@@ -289,8 +306,8 @@ Each is a new `IQuestionGenerator`, scoped to the uploaded chat.
 
 - JSON export support through a second `IChatParser`.
 - GIFs and videos as questions or context. They're placeholders for now, and videos are too large to handle like photos.
-- Restoring photos after a refresh, for example by asking for the folder again without a new upload.
-- Zip upload, unpacked in the browser so media still isn't sent.
+- Restoring photos after a refresh, for example by asking for the zips again without a new upload.
+- Showing chat titles in the chat list. The list uses folder names, because titles are inside the pages and reading every chat's pages would be slow.
 - Non-English exports, since system lines are matched in English only.
 - Parser-failure detection that reports an unsupported export format clearly.
 
