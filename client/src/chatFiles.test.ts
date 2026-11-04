@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chatLabel, groupChats, type ExportFile } from './chatFiles'
+import { chatLabel, groupChats, mediaKind, type ExportFile } from './chatFiles'
 
 function file(path: string): ExportFile {
   return { path, load: () => Promise.resolve(new Blob([path])) }
@@ -16,7 +16,7 @@ describe('groupChats', () => {
 
     expect(chat.folder).toBe('friends_1')
     expect(chat.pages.map((page) => page.path)).toEqual([`${inbox}/friends_1/message_1.html`])
-    expect([...chat.photos.keys()]).toEqual(['photos/a.jpg', 'photos/b.png'])
+    expect([...chat.media.keys()]).toEqual(['photos/a.jpg', 'photos/b.png', 'videos/c.mp4'])
   })
 
   it('keeps a file found in more than one zip once', () => {
@@ -26,7 +26,7 @@ describe('groupChats', () => {
     const [chat] = groupChats([file(page), file(photo), file(page), file(photo)])
 
     expect(chat.pages).toHaveLength(1)
-    expect(chat.photos.size).toBe(1)
+    expect(chat.media.size).toBe(1)
   })
 
   it('keeps chats apart and leaves out folders without pages', () => {
@@ -50,19 +50,32 @@ describe('groupChats', () => {
     expect(chats).toHaveLength(2)
   })
 
-  it('ignores media that isn\'t a photo and nested folders', () => {
+  it('collects photos, GIFs and videos', () => {
     const [chat] = groupChats([
       file(`${inbox}/friends_1/message_1.html`),
-      file(`${inbox}/friends_1/gifs/a.gif`),
+      file(`${inbox}/friends_1/photos/a.jpg`),
+      file(`${inbox}/friends_1/gifs/b.gif`),
+      file(`${inbox}/friends_1/videos/c.mp4`),
+    ])
+
+    expect([...chat.media.keys()].map(mediaKind)).toEqual(['photo', 'gif', 'video'])
+  })
+
+  it('ignores voice messages, other files and nested folders', () => {
+    const [chat] = groupChats([
+      file(`${inbox}/friends_1/message_1.html`),
+      file(`${inbox}/friends_1/audio/a.mp4`),
+      file(`${inbox}/friends_1/files/b.pdf`),
+      file(`${inbox}/friends_1/videos/thumbnail.jpg`),
       file(`${inbox}/friends_1/photos/nested/a.jpg`),
     ])
 
-    expect(chat.photos.size).toBe(0)
+    expect(chat.media.size).toBe(0)
   })
 })
 
 describe('chatLabel', () => {
   it('drops the numeric ID from the folder name', () => {
-    expect(chatLabel({ folder: 'big_men_123', pages: [], photos: new Map() })).toBe('big men')
+    expect(chatLabel({ folder: 'big_men_123', pages: [], media: new Map() })).toBe('big men')
   })
 })

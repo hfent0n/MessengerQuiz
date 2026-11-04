@@ -78,7 +78,7 @@ public class WhoSaidThisGeneratorTests
         {
             new Message("m_0", "Ben", "Unrelated", start, [], false),
             new Message("m_1", "Ana", "Guess what", start.AddMinutes(1), [], false),
-            new Message("m_2", "Ana", "", start.AddMinutes(2), [], true) { Photos = ["photos/a.jpg"] },
+            new Message("m_2", "Ana", "", start.AddMinutes(2), [], true) { Media = ["photos/a.jpg"] },
             new Message("m_3", "Ana", "That was me", start.AddMinutes(3), [], false),
         };
         var session = new ChatSession(new Chat("Test", ["Ana", "Ben"], messages), [messages[3]]);
@@ -87,7 +87,7 @@ public class WhoSaidThisGeneratorTests
 
         Assert.Equal(
             [("Guess what", false, ""), ("", true, "photos/a.jpg")],
-            question.Context.Select(context => (context.Text, context.HasMedia, string.Join(",", context.Photos))));
+            question.Context.Select(context => (context.Text, context.HasMedia, string.Join(",", context.Media))));
     }
 
     [Fact]
@@ -117,14 +117,14 @@ public class WhoSaidThisGeneratorTests
     {
         var messages = new[]
         {
-            new Message("m_0", "Ana", "", null, [], true) { Photos = ["photos/a.jpg", "photos/b.jpg"] },
+            new Message("m_0", "Ana", "", null, [], true) { Media = ["photos/a.jpg", "photos/b.jpg"] },
             new Message("m_1", "Ben", "Unrelated", null, [], false),
         };
         var session = new ChatSession(new Chat("Test", ["Ana", "Ben"], messages), [messages[0]]);
 
         var question = _generator.Next(session)!;
 
-        Assert.Equal(["photos/a.jpg", "photos/b.jpg"], question.Photos);
+        Assert.Equal(["photos/a.jpg", "photos/b.jpg"], question.Media);
         Assert.Equal("", question.Text);
     }
 

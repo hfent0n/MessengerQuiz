@@ -1,10 +1,10 @@
 import { useState, type ChangeEvent, type InputHTMLAttributes } from 'react'
 import type { ActiveChat } from '../activeChat'
 import { uploadChat } from '../api'
-import { chatFromFolder, chatLabel, groupChats, type ChatSource, type ExportFile } from '../chatFiles'
+import { chatFromFolder, chatLabel, groupChats, mediaKind, type ChatSource, type ExportFile } from '../chatFiles'
 
 type Props = {
-  onUploaded: (chat: ActiveChat, photos: ReadonlyMap<string, ExportFile>) => void
+  onUploaded: (chat: ActiveChat, media: ReadonlyMap<string, ExportFile>) => void
 }
 
 type Step = { kind: 'pick' } | { kind: 'reading' } | { kind: 'choose'; chats: ChatSource[] } | { kind: 'uploading' }
@@ -61,7 +61,7 @@ export default function SelectChatScreen({ onUploaded }: Props) {
 
     try {
       const { chatId, title } = await uploadChat(chat)
-      onUploaded({ chatId, title }, chat.photos)
+      onUploaded({ chatId, title }, chat.media)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Something went wrong. Try again.')
       setStep(previous)
@@ -121,11 +121,11 @@ export default function SelectChatScreen({ onUploaded }: Props) {
       {error && <p role="alert" className="error">{error}</p>}
       <p className="note">
         Download your Facebook information in HTML format, then choose every zip it came in at once. A chat's photos
-        can be spread across them.
+        and videos can be spread across them.
       </p>
       <p className="note">
         Only the chosen chat's messages are uploaded. They're held in memory, never saved to disk, and deleted after 2
-        idle hours. Photos are shown from your own files and never leave your device.
+        idle hours. Photos and videos are shown from your own files and never leave your device.
       </p>
       <label className={busy ? 'link busy' : 'link'}>
         Or choose an unzipped chat folder
@@ -143,5 +143,18 @@ export default function SelectChatScreen({ onUploaded }: Props) {
 
 function chatSummary(chat: ChatSource): string {
   const pages = `${chat.pages.length} ${chat.pages.length === 1 ? 'page' : 'pages'}`
-  return chat.photos.size === 0 ? pages : `${pages}, ${chat.photos.size} photos`
+  const counts = { photo: 0, gif: 0, video: 0 }
+  chat.media.forEach((_, path) => counts[mediaKind(path)]++)
+
+  const parts = [
+    pages,
+    counted(counts.photo, 'photo', 'photos'),
+    counted(counts.gif, 'GIF', 'GIFs'),
+    counted(counts.video, 'video', 'videos'),
+  ]
+  return parts.filter(Boolean).join(', ')
+}
+
+function counted(count: number, one: string, many: string): string {
+  return count === 0 ? '' : `${count} ${count === 1 ? one : many}`
 }

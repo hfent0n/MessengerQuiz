@@ -28,8 +28,8 @@ public sealed class QuizOptions
     // Each context message must be within this time of the next one.
     public TimeSpan ContextGap { get; set; } = TimeSpan.FromMinutes(2);
 
-    // The most photo paths one upload can list as available.
-    public int MaxAvailablePhotos { get; set; } = 50_000;
+    // The most media paths one upload can list as available.
+    public int MaxAvailableMedia { get; set; } = 50_000;
 
     // Below this many messages, the chat is rejected as too small to quiz on.
     public int MinQuizMessages { get; set; } = 10;

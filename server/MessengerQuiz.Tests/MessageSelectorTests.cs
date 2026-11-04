@@ -97,15 +97,15 @@ public class MessageSelectorTests
     [Fact]
     public void PhotosMissingFromTheFolderAreDropped()
     {
-        var chat = Chat([Create("", photos: ["photos/a.jpg", "photos/b.jpg"])]).KeepPhotos(new HashSet<string> { "photos/b.jpg" });
+        var chat = Chat([Create("", photos: ["photos/a.jpg", "photos/b.jpg"])]).KeepMedia(new HashSet<string> { "photos/b.jpg" });
 
-        Assert.Equal(["photos/b.jpg"], chat.Messages.Single().Photos);
+        Assert.Equal(["photos/b.jpg"], chat.Messages.Single().Media);
     }
 
     [Fact]
     public void PhotoMessagesWithNoAvailablePhotosAreNotQuizzable()
     {
-        var chat = Chat([Create("", photos: ["photos/a.jpg"], hasMedia: true)]).KeepPhotos(new HashSet<string>());
+        var chat = Chat([Create("", photos: ["photos/a.jpg"], hasMedia: true)]).KeepMedia(new HashSet<string>());
 
         Assert.Empty(_selector.SelectEligible(chat));
     }
@@ -251,7 +251,7 @@ public class MessageSelectorTests
         var reactionList = Enumerable.Range(0, reactions).Select(_ => new Reaction("😆", "Ben")).ToList();
         return new Message(Guid.NewGuid().ToString(), sender, text, minute is { } m ? Start.AddMinutes(m) : null, reactionList, hasMedia)
         {
-            Photos = photos ?? [],
+            Media = photos ?? [],
         };
     }
 }

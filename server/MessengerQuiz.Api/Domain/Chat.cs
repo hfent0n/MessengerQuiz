@@ -2,13 +2,13 @@ namespace MessengerQuiz.Api.Domain;
 
 public sealed record Chat(string Title, IReadOnlyList<string> Participants, IReadOnlyList<Message> Messages)
 {
-    // Drops photos missing from the player's folder. Exports often leave out older media.
-    public Chat KeepPhotos(IReadOnlySet<string> availablePhotos) => this with
+    // Drops media missing from the player's files. Exports often leave out older media.
+    public Chat KeepMedia(IReadOnlySet<string> availableMedia) => this with
     {
         Messages = Messages
-            .Select(message => message.Photos.Count == 0
+            .Select(message => message.Media.Count == 0
                 ? message
-                : message with { Photos = message.Photos.Where(availablePhotos.Contains).ToList() })
+                : message with { Media = message.Media.Where(availableMedia.Contains).ToList() })
             .ToList(),
     };
 }
@@ -21,8 +21,9 @@ public sealed record Message(
     IReadOnlyList<Reaction> Reactions,
     bool HasMedia)
 {
-    // Paths relative to the chat folder, such as "photos/123.jpg". GIFs, videos and stickers aren't included.
-    public IReadOnlyList<string> Photos { get; init; } = [];
+    // Photos, GIFs and videos, as paths relative to the chat folder, such as "photos/123.jpg" or "videos/456.mp4".
+    // The folder says which kind each is. Stickers and voice messages aren't included.
+    public IReadOnlyList<string> Media { get; init; } = [];
 }
 
 public sealed record Reaction(string Emoji, string Reactor);

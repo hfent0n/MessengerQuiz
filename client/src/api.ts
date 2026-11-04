@@ -11,14 +11,14 @@ export type UploadedChat = {
 export type ContextMessage = {
   text: string
   hasMedia: boolean
-  photos: string[]
+  media: string[]
 }
 
 export type Question = {
   messageId: string
   text: string
   // Paths inside the chat folder, shown from the player's own files.
-  photos: string[]
+  media: string[]
   // Earlier messages from the same sender, oldest first.
   context: ContextMessage[]
   options: string[]
@@ -37,13 +37,13 @@ export class ApiError extends Error {
 
 const CHAT_ID_HEADER = 'X-Chat-Id'
 
-// Pages are gzipped first, which makes them about 9 times smaller. Photos never leave the device, only their names.
+// Pages are gzipped first, which makes them about 9 times smaller. Media never leaves the device, only file names.
 export async function uploadChat(chat: ChatSource): Promise<UploadedChat> {
   const form = new FormData()
   for (const page of chat.pages) {
     form.append('files', await gzip(await page.load()), `${chat.folder}/${fileName(page)}`)
   }
-  form.append('photos', JSON.stringify([...chat.photos.keys()]))
+  form.append('media', JSON.stringify([...chat.media.keys()]))
 
   const response = await fetch('/api/chats', { method: 'POST', body: form })
   if (!response.ok) throw await toApiError(response)

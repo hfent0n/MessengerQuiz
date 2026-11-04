@@ -80,7 +80,7 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
         // The photo wasn't listed as available, so it stays a placeholder.
         Assert.Equal(
             [($"First {index}", false, 0), ("", true, 0), ($"Third {index}", false, 0)],
-            question.Context.Select(context => (context.Text, context.HasMedia, context.Photos.Count)));
+            question.Context.Select(context => (context.Text, context.HasMedia, context.Media.Count)));
     }
 
     [Fact]
@@ -101,10 +101,36 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
             questions.Add(await GetQuestion(client, chat.ChatId));
         }
 
-        var photoQuestions = questions.Where(question => question.Photos.Count > 0).ToList();
+        var photoQuestions = questions.Where(question => question.Media.Count > 0).ToList();
         Assert.Equal(6, photoQuestions.Count);
-        Assert.All(photoQuestions, question => Assert.Contains(Assert.Single(question.Photos), available));
+        Assert.All(photoQuestions, question => Assert.Contains(Assert.Single(question.Media), available));
         Assert.All(photoQuestions, question => Assert.Equal("Ana", question.Answer));
+    }
+
+    [Fact]
+    public async Task GifsAndVideosCanBeQuestions()
+    {
+        var client = _factory.CreateClient();
+        var messages = OtherPeoplesMessages()
+            .Append(FakeExport.Gif("Dee", "1.gif"))
+            .Append(FakeExport.Video("Eve", "2.mp4"))
+            .ToArray();
+        var chat = await Upload(
+            client, FakeExport.Page("Media", messages), JsonSerializer.Serialize(new[] { "gifs/1.gif", "videos/2.mp4" }));
+
+        // Context uses up some messages, so ask until the chat runs out.
+        var media = new Dictionary<string, string>();
+        HttpResponseMessage response;
+        while ((response = await SendQuestionRequest(client, chat.ChatId)).StatusCode == HttpStatusCode.OK)
+        {
+            var question = (await response.Content.ReadFromJsonAsync<WhoSaidThisQuestion>())!;
+            if (question.Media.Count > 0)
+            {
+                media[Assert.Single(question.Media)] = question.Answer;
+            }
+        }
+
+        Assert.Equal(new Dictionary<string, string> { ["gifs/1.gif"] = "Dee", ["videos/2.mp4"] = "Eve" }, media);
     }
 
     [Fact]
@@ -343,7 +369,7 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
         var form = new MultipartFormDataContent { { content, "files", "chat/message_1.html" } };
         if (photos is not null)
         {
-            form.Add(new StringContent(photos), "photos");
+            form.Add(new StringContent(photos), "media");
         }
 
         return await client.PostAsync("/api/chats", form);

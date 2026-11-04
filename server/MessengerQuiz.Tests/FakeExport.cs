@@ -38,6 +38,15 @@ internal static class FakeExport
     public static string PhotoAt(string sender, string timestamp, string fileName = "p.jpg", string[]? reactions = null) =>
         Media(sender, $"{ChatFolder}/photos/{fileName}", timestamp, reactions ?? []);
 
+    public static string Gif(string sender, string fileName = "g.gif") =>
+        Media(sender, $"{ChatFolder}/gifs/{fileName}", DefaultTimestamp);
+
+    public static string Video(string sender, string fileName = "v.mp4")
+    {
+        var video = $"""<div><div><video src="{ChatFolder}/videos/{fileName}" controls="1" class="_a6_o _3-96"><a href="{ChatFolder}/videos/{fileName}">Click for video</a></video><div></div></div></div>""";
+        return Block(sender, $"<div></div><div></div><div></div><div></div>{video}", DefaultTimestamp);
+    }
+
     // Any image the export can reference, such as a GIF or sticker.
     public static string Media(string sender, string source, string timestamp, params string[] reactions)
     {

@@ -2,14 +2,14 @@ import { useCallback, useState } from 'react'
 import { loadActiveChat, saveActiveChat, type ActiveChat } from './activeChat'
 import { deleteChat } from './api'
 import type { ExportFile } from './chatFiles'
-import { releasePhotoUrls } from './photoUrls'
+import { releaseMediaUrls } from './mediaUrls'
 import QuizScreen from './screens/QuizScreen'
 import SelectChatScreen from './screens/SelectChatScreen'
 
 export default function App() {
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(loadActiveChat)
-  // Files can't be stored, so photos are lost on refresh until the chat is chosen again.
-  const [photos, setPhotos] = useState<ReadonlyMap<string, ExportFile>>(new Map())
+  // Files can't be stored, so media is lost on refresh until the chat is chosen again.
+  const [media, setMedia] = useState<ReadonlyMap<string, ExportFile>>(new Map())
 
   const changeActiveChat = useCallback((chat: ActiveChat | null) => {
     saveActiveChat(chat)
@@ -18,16 +18,16 @@ export default function App() {
 
   const clearActiveChat = useCallback(() => changeActiveChat(null), [changeActiveChat])
 
-  function handleUploaded(chat: ActiveChat, chatPhotos: ReadonlyMap<string, ExportFile>) {
-    releasePhotoUrls()
-    setPhotos(chatPhotos)
+  function handleUploaded(chat: ActiveChat, chatMedia: ReadonlyMap<string, ExportFile>) {
+    releaseMediaUrls()
+    setMedia(chatMedia)
     changeActiveChat(chat)
   }
 
   async function wipeChat() {
     if (activeChat) await deleteChat(activeChat.chatId)
-    releasePhotoUrls()
-    setPhotos(new Map())
+    releaseMediaUrls()
+    setMedia(new Map())
     changeActiveChat(null)
   }
 
@@ -38,7 +38,7 @@ export default function App() {
         <QuizScreen
           key={activeChat.chatId}
           chat={activeChat}
-          photos={photos}
+          media={media}
           onWipe={wipeChat}
           onExpired={clearActiveChat}
         />

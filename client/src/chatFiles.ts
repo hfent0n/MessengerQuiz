@@ -9,17 +9,17 @@ export type ChatSource = {
   // The chat's folder name, such as "friends_123". Pages are uploaded under it.
   folder: string
   pages: ExportFile[]
-  // Keyed by the path inside the chat folder, such as "photos/123.jpg", which is how the server refers to them.
-  // The photos stay in the browser. Only their names are sent.
-  photos: Map<string, ExportFile>
+  // Photos, GIFs and videos, keyed by the path inside the chat folder, such as "photos/123.jpg", which is how the
+  // server refers to them. The files stay in the browser. Only their names are sent.
+  media: Map<string, ExportFile>
 }
 
 const PAGE_FILE_NAME = /^message_\d+\.html$/
-const PHOTO_PATH = /^photos\/[^/]+\.(jpe?g|png|webp)$/i
+const MEDIA_PATH = /^(photos\/[^/]+\.(jpe?g|png|webp)|gifs\/[^/]+\.gif|videos\/[^/]+\.mp4)$/i
 // Chats sit in messages/<inbox, archived_threads, ...>/<chat folder>/.
 const CHAT_FILE_PATH = /(?:^|\/)messages\/([^/]+\/([^/]+))\/(.+)$/
 
-// One export is split across several zips, and a chat's pages and photos can be in different ones.
+// One export is split across several zips, and a chat's pages and media can be in different ones.
 // Files with the same path are kept once.
 export function groupChats(files: ExportFile[]): ChatSource[] {
   const chats = new Map<string, ChatSource & { pageNames: Set<string> }>()
@@ -31,27 +31,27 @@ export function groupChats(files: ExportFile[]): ChatSource[] {
 
     let chat = chats.get(key)
     if (!chat) {
-      chat = { folder, pages: [], photos: new Map(), pageNames: new Set() }
+      chat = { folder, pages: [], media: new Map(), pageNames: new Set() }
       chats.set(key, chat)
     }
 
     if (PAGE_FILE_NAME.test(rest) && !chat.pageNames.has(rest)) {
       chat.pageNames.add(rest)
       chat.pages.push(file)
-    } else if (PHOTO_PATH.test(rest) && !chat.photos.has(rest)) {
-      chat.photos.set(rest, file)
+    } else if (MEDIA_PATH.test(rest) && !chat.media.has(rest)) {
+      chat.media.set(rest, file)
     }
   }
 
   return [...chats.values()]
     .filter((chat) => chat.pages.length > 0)
-    .map(({ folder, pages, photos }) => ({ folder, pages, photos }))
+    .map(({ folder, pages, media }) => ({ folder, pages, media }))
     .sort((a, b) => b.pages.length - a.pages.length || a.folder.localeCompare(b.folder))
 }
 
 // An unzipped chat folder. Pages sit directly inside it. Deeper pages mean it holds several chats, such as inbox.
 export function chatFromFolder(files: File[]): ChatSource | null {
-  const chat: ChatSource = { folder: '', pages: [], photos: new Map() }
+  const chat: ChatSource = { folder: '', pages: [], media: new Map() }
 
   for (const file of files) {
     const [folder, ...rest] = file.webkitRelativePath.split('/')
@@ -61,12 +61,34 @@ export function chatFromFolder(files: File[]): ChatSource | null {
     if (rest.length === 1 && PAGE_FILE_NAME.test(path)) {
       chat.folder = folder
       chat.pages.push(exportFile)
-    } else if (PHOTO_PATH.test(path)) {
-      chat.photos.set(path, exportFile)
+    } else if (MEDIA_PATH.test(path)) {
+      chat.media.set(path, exportFile)
     }
   }
 
   return chat.pages.length > 0 ? chat : null
+}
+
+export type MediaKind = 'photo' | 'gif' | 'video'
+
+// The folder says what a media file is, as it does on the server.
+export function mediaKind(path: string): MediaKind {
+  if (path.startsWith('videos/')) return 'video'
+  if (path.startsWith('gifs/')) return 'gif'
+  return 'photo'
+}
+
+const MIME_TYPES: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  mp4: 'video/mp4',
+}
+
+export function mimeType(path: string): string {
+  return MIME_TYPES[path.slice(path.lastIndexOf('.') + 1).toLowerCase()] ?? ''
 }
 
 // Folder names end in a numeric ID, such as "friends_123".

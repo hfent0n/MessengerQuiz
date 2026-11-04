@@ -12,8 +12,9 @@ public static class ChatEndpoints
 {
     public const string UploadRateLimitPolicy = "uploads";
 
-    // A JSON array of photo paths inside the chat folder, such as "photos/123.jpg". Only names are sent, never images.
-    private const string AvailablePhotosField = "photos";
+    // A JSON array of media paths inside the chat folder, such as "photos/123.jpg" or "videos/456.mp4".
+    // Only names are sent, never the files.
+    private const string AvailableMediaField = "media";
 
     public static void MapChatEndpoints(this IEndpointRouteBuilder app)
     {
@@ -58,9 +59,9 @@ public static class ChatEndpoints
             return Problem(StatusCodes.Status413PayloadTooLarge, "This chat is too large to upload.");
         }
 
-        if (!TryReadAvailablePhotos(form, quiz.MaxAvailablePhotos, out var availablePhotos))
+        if (!TryReadAvailableMedia(form, quiz.MaxAvailableMedia, out var availableMedia))
         {
-            return Problem(StatusCodes.Status400BadRequest, "The list of photos couldn't be read.");
+            return Problem(StatusCodes.Status400BadRequest, "The list of media files couldn't be read.");
         }
 
         var decompressor = new PageDecompressor(quiz.MaxPagesBytes);
@@ -81,7 +82,7 @@ public static class ChatEndpoints
                 pages.Add(new ChatPage(file.FileName, page));
             }
 
-            var chat = (await parser.ParseAsync(pages, context.RequestAborted)).KeepPhotos(availablePhotos);
+            var chat = (await parser.ParseAsync(pages, context.RequestAborted)).KeepMedia(availableMedia);
             var eligible = selector.SelectEligible(chat);
 
             if (eligible.Select(message => message.Sender).Distinct().Count() < 2 || eligible.Count < quiz.MinQuizMessages)
@@ -119,10 +120,10 @@ public static class ChatEndpoints
         }
     }
 
-    private static bool TryReadAvailablePhotos(IFormCollection form, int maxPhotos, out HashSet<string> photos)
+    private static bool TryReadAvailableMedia(IFormCollection form, int maxPaths, out HashSet<string> media)
     {
-        photos = [];
-        var json = form[AvailablePhotosField].ToString();
+        media = [];
+        var json = form[AvailableMediaField].ToString();
         if (json.Length == 0)
         {
             return true;
@@ -131,12 +132,12 @@ public static class ChatEndpoints
         try
         {
             var paths = JsonSerializer.Deserialize<string[]>(json);
-            if (paths is null || paths.Length > maxPhotos)
+            if (paths is null || paths.Length > maxPaths)
             {
                 return false;
             }
 
-            photos = [.. paths];
+            media = [.. paths];
             return true;
         }
         catch (JsonException)

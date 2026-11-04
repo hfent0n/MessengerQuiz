@@ -18,7 +18,9 @@ public sealed class HtmlChatParser : IChatParser
     // Inside the content wrapper, the second div holds the text. Later divs hold media and reactions.
     private const int TextDivIndex = 1;
 
-    private const string PhotoFolder = "photos/";
+    // Images in these folders are photos and GIFs. Video sources are in "videos/". Images there are thumbnails.
+    private static readonly string[] ImageFolders = ["photos/", "gifs/"];
+    private static readonly string[] VideoFolders = ["videos/"];
 
     // Older exports write "9:05:03pm" and newer ones "9:05:03 pm".
     private static readonly string[] TimestampFormats = ["MMM d, yyyy h:mm:sstt", "MMM d, yyyy h:mm:ss tt"];
@@ -62,7 +64,7 @@ public sealed class HtmlChatParser : IChatParser
             .Select((message, index) => new Message(
                 $"m_{index}", message.Sender, message.Text, message.SentAt, message.Reactions, message.HasMedia)
             {
-                Photos = message.Photos,
+                Media = message.Media,
             })
             .ToList();
 
@@ -105,11 +107,9 @@ public sealed class HtmlChatParser : IChatParser
         var textDiv = block.QuerySelector(ContentSelector)?.FirstElementChild?.Children.ElementAtOrDefault(TextDivIndex);
         var reactions = block.QuerySelectorAll(ReactionSelector).Select(ParseReaction).OfType<Reaction>().ToList();
         var hasMedia = block.QuerySelector("img, video, audio") is not null;
-        var photos = block.QuerySelectorAll("img")
-            .Select(image => PhotoPath(image.GetAttribute("src")))
-            .OfType<string>()
-            .Distinct()
-            .ToList();
+        var images = block.QuerySelectorAll("img").Select(image => MediaPath(image.GetAttribute("src"), ImageFolders));
+        var videos = block.QuerySelectorAll("video").Select(video => MediaPath(video.GetAttribute("src"), VideoFolders));
+        var media = images.Concat(videos).OfType<string>().Distinct().ToList();
 
         return new ParsedMessage(
             sender.TextContent.Trim(),
@@ -117,12 +117,12 @@ public sealed class HtmlChatParser : IChatParser
             ParseTimestamp(timestamp.TextContent),
             reactions,
             hasMedia,
-            photos);
+            media);
     }
 
     // Sources look like "your_facebook_activity/messages/inbox/chat_123/photos/456.jpg".
-    // Keeping the part from "photos/" matches the paths the browser sees inside the chosen folder.
-    private static string? PhotoPath(string? source)
+    // Keeping the part from the media folder matches the paths the browser sees inside the chat folder.
+    private static string? MediaPath(string? source, string[] folders)
     {
         if (string.IsNullOrEmpty(source))
         {
@@ -130,13 +130,21 @@ public sealed class HtmlChatParser : IChatParser
         }
 
         var normalised = source.Replace('\\', '/');
-        if (normalised.StartsWith(PhotoFolder, StringComparison.Ordinal))
+        foreach (var folder in folders)
         {
-            return normalised;
+            if (normalised.StartsWith(folder, StringComparison.Ordinal))
+            {
+                return normalised;
+            }
+
+            var index = normalised.LastIndexOf("/" + folder, StringComparison.Ordinal);
+            if (index >= 0)
+            {
+                return normalised[(index + 1)..];
+            }
         }
 
-        var index = normalised.LastIndexOf("/" + PhotoFolder, StringComparison.Ordinal);
-        return index < 0 ? null : normalised[(index + 1)..];
+        return null;
     }
 
     private static string ExtractText(IElement element)
@@ -192,5 +200,5 @@ public sealed class HtmlChatParser : IChatParser
         DateTime? SentAt,
         IReadOnlyList<Reaction> Reactions,
         bool HasMedia,
-        IReadOnlyList<string> Photos);
+        IReadOnlyList<string> Media);
 }
