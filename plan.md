@@ -46,6 +46,9 @@ Measured against a real export of 64 chats and 102,779 messages.
 | System lines look like normal messages ("X reacted ❤ to…", "joined the call"), roughly 680 found | They must be filtered out, or they give away the answer |
 | 21 blocks have no timestamp, and all are group photo entries with only an image | The parser skips them because they aren't messages |
 | Timestamps are in the export's language | `SentAt` is nullable, so another format doesn't reject the chat |
+| About 10% of messages are photos, and 40% of photo messages got reactions | Photos can be questions too |
+| Only about 38% of referenced photo files are in the download | Photo questions only use files the player's folder contains |
+| One chat folder held 128 MB of photos, 432 MB of GIFs and 1.1 GB of video | Media can't be uploaded as part of a chat |
 | Message text is always in the second inner `div` | Reading only that `div` excludes media captions and link previews |
 | The participants header only appears on group chats | Participants come from message senders instead |
 | Timestamps have no time zone | Treat them as local time |
@@ -77,7 +80,7 @@ Message counts passing the original filters, out of about 99,000 text messages (
 ## Flow
 
 1. The player opens `messages/inbox` in their export and selects one chat's folder.
-2. The browser posts only that chat's `message_*.html` files, never its media.
+2. The browser posts only that chat's `message_*.html` files and the names of the photos in its `photos` folder. Images, GIFs and videos never leave the device.
 3. The server parses them, holds the result in memory and returns a secret chat ID.
 4. The quiz sends that chat ID in a header on each request.
 
@@ -95,7 +98,7 @@ The `GET` and `DELETE` routes identify the chat with an `X-Chat-Id` header. The 
 
 ### `POST /api/chats`
 
-Multipart form with one or more `message_*.html` files, all from the same chat.
+Multipart form with one or more `message_*.html` files, all from the same chat, and an optional `photos` field. That field is a JSON array of the photo paths present in the folder, such as `["photos/123.jpg"]`. The server only asks photo questions about these, because exports often leave out older media.
 
 ```json
 {
@@ -111,6 +114,7 @@ Multipart form with one or more `message_*.html` files, all from the same chat.
 |---|---|
 | `201` | The chat was parsed |
 | `400` | No files, or a file isn't a recognisable Messenger page |
+| `400` | The `photos` field isn't a JSON array of strings, or lists more than 50,000 paths |
 | `400` | The files come from different chats, based on the page title and participants |
 | `413` | The upload is over the 50 MB limit |
 | `422` | The chat has fewer than 2 senders or too few eligible messages |
@@ -125,9 +129,10 @@ Kestrel's default body limit is 30 MB. The endpoint sets its own 50 MB limit, so
 {
   "messageId": "m_1042",
   "text": "...",
+  "photos": ["photos/123.jpg"],
   "context": [
-    { "text": "Earlier message from the same sender", "hasMedia": false },
-    { "text": "", "hasMedia": true }
+    { "text": "Earlier message from the same sender", "hasMedia": false, "photos": [] },
+    { "text": "", "hasMedia": true, "photos": ["photos/122.jpg"] }
   ],
   "options": ["A", "B", "C", "D"],
   "answer": "B",
@@ -207,6 +212,7 @@ MessengerQuiz/
 - Ties at the cut-off are broken randomly.
 - Each question includes up to 3 earlier messages from the same sender, oldest first. The run stops at another sender, a system line, or a gap over 5 minutes. Media-only messages appear as a placeholder.
 - Context messages are marked as asked, because a player who has seen them knows who sent them.
+- Photo messages are quizzable without text, as long as their photo is in the player's folder. They're ranked with text messages and make up at most about 16% of questions in your chats.
 - Pick a random sender first, then one of their messages. Otherwise the most talkative person is nearly always the answer.
 - Track asked message IDs per chat so questions don't repeat. Choosing a message and recording it happen under the chat's lock, so the two steps can't interleave.
 
@@ -245,6 +251,8 @@ The chat ID is kept in `sessionStorage`, so it survives a refresh but is cleared
 | One chat per upload | Only the chosen chat leaves the device, and the API is simpler with no session layer |
 | Top 5% by reactions, with a floor of 50 | Strict 5% would leave most chats with only a handful of questions |
 | Context is the same sender's run only | It answers "what were they talking about?" without giving away other people's replies |
+| Photos are shown from the player's own files | No upload size problem, no extra server memory, and no photo or its location data leaves the device |
+| Photos aren't restored after a refresh | Browsers can't keep file access across reloads, so photos show a note asking the player to choose the chat again |
 | Player selects a chat's folder directly | The browser never reads the rest of the export, and there's no chat list screen to maintain |
 | Chats are held in memory only | Private messages should not be stored |
 | 2-hour idle expiry, rather than the server's lifetime | A long-running server would otherwise hold everyone's messages indefinitely |
@@ -280,6 +288,8 @@ Each is a new `IQuestionGenerator`, scoped to the uploaded chat.
 ### Ingestion
 
 - JSON export support through a second `IChatParser`.
+- GIFs and videos as questions or context. They're placeholders for now, and videos are too large to handle like photos.
+- Restoring photos after a refresh, for example by asking for the folder again without a new upload.
 - Zip upload, unpacked in the browser so media still isn't sent.
 - Non-English exports, since system lines are matched in English only.
 - Parser-failure detection that reports an unsupported export format clearly.

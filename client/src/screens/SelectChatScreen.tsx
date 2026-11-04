@@ -1,10 +1,10 @@
 import { useState, type ChangeEvent, type InputHTMLAttributes } from 'react'
 import type { ActiveChat } from '../activeChat'
 import { uploadChat } from '../api'
-import { findChatPages } from '../chatFiles'
+import { findChatPages, findChatPhotos } from '../chatFiles'
 
 type Props = {
-  onUploaded: (chat: ActiveChat) => void
+  onUploaded: (chat: ActiveChat, photos: ReadonlyMap<string, File>) => void
 }
 
 const folderPickerProps = { webkitdirectory: '' } as InputHTMLAttributes<HTMLInputElement>
@@ -27,9 +27,11 @@ export default function SelectChatScreen({ onUploaded }: Props) {
     setError(null)
     setUploading(true)
 
+    const photos = findChatPhotos(files)
+
     try {
-      const { chatId, title } = await uploadChat(pages)
-      onUploaded({ chatId, title })
+      const { chatId, title } = await uploadChat(pages, [...photos.keys()])
+      onUploaded({ chatId, title }, photos)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Something went wrong. Try again.')
       setUploading(false)
@@ -54,8 +56,8 @@ export default function SelectChatScreen({ onUploaded }: Props) {
         In your Facebook HTML export, open <code>messages/inbox</code> and choose the folder for one chat.
       </p>
       <p className="note">
-        Only that chat's messages are uploaded, not its photos or videos. They're held in memory, never saved to disk,
-        and deleted after 2 idle hours.
+        Only that chat's messages are uploaded. They're held in memory, never saved to disk, and deleted after 2 idle
+        hours. Photos are shown from your own files and never leave your device.
       </p>
     </section>
   )

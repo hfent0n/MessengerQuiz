@@ -8,6 +8,7 @@ public sealed class ChatSession(Chat chat, IReadOnlyList<Message> eligible)
 {
     private const int MessageOverheadBytes = 200;
     private const int ReactionOverheadBytes = 100;
+    private const int PhotoPathBytes = 200;
 
     private readonly HashSet<string> _askedMessageIds = [];
     private readonly Dictionary<string, int> _positions = chat.Messages
@@ -20,7 +21,8 @@ public sealed class ChatSession(Chat chat, IReadOnlyList<Message> eligible)
     public IReadOnlyList<Message> Eligible { get; } = eligible;
 
     public long EstimatedBytes { get; } = chat.Messages.Sum(message =>
-        MessageOverheadBytes + message.Text.Length * 2L + message.Reactions.Count * ReactionOverheadBytes);
+        MessageOverheadBytes + message.Text.Length * 2L + message.Reactions.Count * ReactionOverheadBytes
+        + message.Photos.Count * PhotoPathBytes);
 
     public int PositionOf(Message message) => _positions[message.Id];
 

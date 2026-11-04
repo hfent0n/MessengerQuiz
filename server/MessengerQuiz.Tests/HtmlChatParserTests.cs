@@ -60,6 +60,27 @@ public class HtmlChatParserTests
     }
 
     [Fact]
+    public async Task RecordsPhotoPathsRelativeToTheChatFolder()
+    {
+        var chat = await Parse(FakeExport.Page("Friends", FakeExport.PhotoAt("Ana", FakeExport.DefaultTimestamp, "123.jpg")));
+
+        Assert.Equal(["photos/123.jpg"], chat.Messages.Single().Photos);
+    }
+
+    [Theory]
+    [InlineData(FakeExport.ChatFolder + "/gifs/a.gif")]
+    [InlineData(FakeExport.ChatFolder + "/videos/thumbnail.jpg")]
+    [InlineData("your_facebook_activity/messages/stickers_used/s.png")]
+    public async Task OtherMediaAreNotPhotos(string source)
+    {
+        var chat = await Parse(FakeExport.Page("Friends", FakeExport.Media("Ana", source, FakeExport.DefaultTimestamp)));
+
+        var message = chat.Messages.Single();
+        Assert.Empty(message.Photos);
+        Assert.True(message.HasMedia);
+    }
+
+    [Fact]
     public async Task SkipsHeaderAndGroupPhotoBlocks()
     {
         var chat = await Parse(FakeExport.Page(

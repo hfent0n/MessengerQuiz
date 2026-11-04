@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { ActiveChat } from '../activeChat'
-import { ApiError, nextQuestion, type Question } from '../api'
+import { ApiError, nextQuestion, type ContextMessage, type Question } from '../api'
+import ChatPhoto from '../components/ChatPhoto'
 
 type Props = {
   chat: ActiveChat
+  photos: ReadonlyMap<string, File>
   onWipe: () => void
   onExpired: () => void
 }
@@ -15,7 +17,7 @@ type Round =
   | { status: 'asking'; question: Question }
   | { status: 'answered'; question: Question; choice: string }
 
-export default function QuizScreen({ chat, onWipe, onExpired }: Props) {
+export default function QuizScreen({ chat, photos, onWipe, onExpired }: Props) {
   const [round, setRound] = useState<Round>({ status: 'loading' })
   const [roundNumber, setRoundNumber] = useState(0)
   const [score, setScore] = useState({ correct: 0, answered: 0 })
@@ -77,14 +79,17 @@ export default function QuizScreen({ chat, onWipe, onExpired }: Props) {
 
       {(round.status === 'asking' || round.status === 'answered') && (
         <>
-          <p className="prompt">{round.question.context.length > 0 ? 'Who sent these messages?' : 'Who said this?'}</p>
+          <p className="prompt">{prompt(round.question)}</p>
           <div className="thread">
             {round.question.context.map((message, index) => (
-              <p key={index} className={message.text ? 'message context' : 'message context media'}>
-                {message.text || 'Sent a photo or video'}
-              </p>
+              <ContextBubble key={index} message={message} photos={photos} />
             ))}
-            <blockquote className="message">{round.question.text}</blockquote>
+            <blockquote className="message">
+              {round.question.photos.map((path) => (
+                <ChatPhoto key={path} file={photos.get(path)} />
+              ))}
+              {round.question.text && <span className="message-text">{round.question.text}</span>}
+            </blockquote>
           </div>
           <div className="options">
             {round.question.options.map((option) => (
@@ -114,6 +119,26 @@ export default function QuizScreen({ chat, onWipe, onExpired }: Props) {
       <button className="link" onClick={onWipe}>Wipe my chat and exit</button>
     </section>
   )
+}
+
+function ContextBubble({ message, photos }: { message: ContextMessage; photos: ReadonlyMap<string, File> }) {
+  if (message.photos.length === 0 && !message.text) {
+    return <p className="message context media">Sent a photo or video</p>
+  }
+
+  return (
+    <div className="message context">
+      {message.photos.map((path) => (
+        <ChatPhoto key={path} file={photos.get(path)} />
+      ))}
+      {message.text && <span className="message-text">{message.text}</span>}
+    </div>
+  )
+}
+
+function prompt(question: Question): string {
+  if (question.context.length > 0) return 'Who sent these messages?'
+  return question.photos.length > 0 && !question.text ? 'Who sent this photo?' : 'Who said this?'
 }
 
 function optionClass(round: Round, option: string): string {

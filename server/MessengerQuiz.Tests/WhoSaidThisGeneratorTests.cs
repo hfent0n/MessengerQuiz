@@ -78,14 +78,16 @@ public class WhoSaidThisGeneratorTests
         {
             new Message("m_0", "Ben", "Unrelated", start, [], false),
             new Message("m_1", "Ana", "Guess what", start.AddMinutes(1), [], false),
-            new Message("m_2", "Ana", "", start.AddMinutes(2), [], true),
+            new Message("m_2", "Ana", "", start.AddMinutes(2), [], true) { Photos = ["photos/a.jpg"] },
             new Message("m_3", "Ana", "That was me", start.AddMinutes(3), [], false),
         };
         var session = new ChatSession(new Chat("Test", ["Ana", "Ben"], messages), [messages[3]]);
 
         var question = _generator.Next(session)!;
 
-        Assert.Equal([new ContextMessage("Guess what", false), new ContextMessage("", true)], question.Context);
+        Assert.Equal(
+            [("Guess what", false, ""), ("", true, "photos/a.jpg")],
+            question.Context.Select(context => (context.Text, context.HasMedia, string.Join(",", context.Photos))));
     }
 
     [Fact]
@@ -108,6 +110,22 @@ public class WhoSaidThisGeneratorTests
 
         // Context can repeat across questions. Every message is still either asked or shown.
         Assert.Equal(messages.Select(message => message.Id).ToHashSet(), seen.ToHashSet());
+    }
+
+    [Fact]
+    public void PhotoQuestionsIncludeTheirPhotos()
+    {
+        var messages = new[]
+        {
+            new Message("m_0", "Ana", "", null, [], true) { Photos = ["photos/a.jpg", "photos/b.jpg"] },
+            new Message("m_1", "Ben", "Unrelated", null, [], false),
+        };
+        var session = new ChatSession(new Chat("Test", ["Ana", "Ben"], messages), [messages[0]]);
+
+        var question = _generator.Next(session)!;
+
+        Assert.Equal(["photos/a.jpg", "photos/b.jpg"], question.Photos);
+        Assert.Equal("", question.Text);
     }
 
     private static ChatSession Session(IReadOnlyList<string> participants, int messageCount)

@@ -89,6 +89,42 @@ public class MessageSelectorTests
     }
 
     [Fact]
+    public void PhotoMessagesAreQuizzableWithoutText()
+    {
+        Assert.Single(_selector.SelectEligible(Chat([Create("", photos: ["photos/a.jpg"])])));
+    }
+
+    [Fact]
+    public void PhotosMissingFromTheFolderAreDropped()
+    {
+        var chat = Chat([Create("", photos: ["photos/a.jpg", "photos/b.jpg"])]).KeepPhotos(new HashSet<string> { "photos/b.jpg" });
+
+        Assert.Equal(["photos/b.jpg"], chat.Messages.Single().Photos);
+    }
+
+    [Fact]
+    public void PhotoMessagesWithNoAvailablePhotosAreNotQuizzable()
+    {
+        var chat = Chat([Create("", photos: ["photos/a.jpg"], hasMedia: true)]).KeepPhotos(new HashSet<string>());
+
+        Assert.Empty(_selector.SelectEligible(chat));
+    }
+
+    [Fact]
+    public void RanksPhotosAndTextTogether()
+    {
+        var selector = Selector(topShare: 0.5, minPoolSize: 1);
+        var chat = Chat([
+            Create("", reactions: 9, photos: ["photos/a.jpg"]),
+            Create(LongText, reactions: 5),
+            Create(LongText, reactions: 1),
+            Create("", reactions: 0, photos: ["photos/b.jpg"]),
+        ]);
+
+        Assert.Equal([9, 5], selector.SelectEligible(chat).Select(message => message.Reactions.Count));
+    }
+
+    [Fact]
     public void ExcludesMediaMessagesWithoutText()
     {
         Assert.Empty(_selector.SelectEligible(Chat([Create("", reactions: 3)])));
@@ -209,9 +245,13 @@ public class MessageSelectorTests
         int reactions = 0,
         string sender = "Ana",
         int? minute = null,
-        bool hasMedia = false)
+        bool hasMedia = false,
+        IReadOnlyList<string>? photos = null)
     {
         var reactionList = Enumerable.Range(0, reactions).Select(_ => new Reaction("😆", "Ben")).ToList();
-        return new Message(Guid.NewGuid().ToString(), sender, text, minute is { } m ? Start.AddMinutes(m) : null, reactionList, hasMedia);
+        return new Message(Guid.NewGuid().ToString(), sender, text, minute is { } m ? Start.AddMinutes(m) : null, reactionList, hasMedia)
+        {
+            Photos = photos ?? [],
+        };
     }
 }

@@ -9,11 +9,14 @@ export type UploadedChat = {
 export type ContextMessage = {
   text: string
   hasMedia: boolean
+  photos: string[]
 }
 
 export type Question = {
   messageId: string
   text: string
+  // Paths inside the chat folder, shown from the player's own files.
+  photos: string[]
   // Earlier messages from the same sender, oldest first.
   context: ContextMessage[]
   options: string[]
@@ -32,11 +35,12 @@ export class ApiError extends Error {
 
 const CHAT_ID_HEADER = 'X-Chat-Id'
 
-export async function uploadChat(pages: File[]): Promise<UploadedChat> {
+export async function uploadChat(pages: File[], photoPaths: string[]): Promise<UploadedChat> {
   const form = new FormData()
   for (const page of pages) {
     form.append('files', page, page.webkitRelativePath)
   }
+  form.append('photos', JSON.stringify(photoPaths))
 
   const response = await fetch('/api/chats', { method: 'POST', body: form })
   if (!response.ok) throw await toApiError(response)

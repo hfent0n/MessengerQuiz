@@ -19,6 +19,8 @@ public sealed class HtmlChatParser : IChatParser
     private const int TextDivIndex = 1;
 
     // Older exports write "9:05:03pm" and newer ones "9:05:03 pm".
+    private const string PhotoFolder = "photos/";
+
     private static readonly string[] TimestampFormats = ["MMM d, yyyy h:mm:sstt", "MMM d, yyyy h:mm:ss tt"];
 
     public async Task<Chat> ParseAsync(IReadOnlyList<ChatPage> pages, CancellationToken cancellationToken)
@@ -58,7 +60,10 @@ public sealed class HtmlChatParser : IChatParser
         var ordered = messages
             .OrderBy(message => message.SentAt ?? DateTime.MinValue)
             .Select((message, index) => new Message(
-                $"m_{index}", message.Sender, message.Text, message.SentAt, message.Reactions, message.HasMedia))
+                $"m_{index}", message.Sender, message.Text, message.SentAt, message.Reactions, message.HasMedia)
+            {
+                Photos = message.Photos,
+            })
             .ToList();
 
         var participants = ordered
@@ -100,13 +105,38 @@ public sealed class HtmlChatParser : IChatParser
         var textDiv = block.QuerySelector(ContentSelector)?.FirstElementChild?.Children.ElementAtOrDefault(TextDivIndex);
         var reactions = block.QuerySelectorAll(ReactionSelector).Select(ParseReaction).OfType<Reaction>().ToList();
         var hasMedia = block.QuerySelector("img, video, audio") is not null;
+        var photos = block.QuerySelectorAll("img")
+            .Select(image => PhotoPath(image.GetAttribute("src")))
+            .OfType<string>()
+            .Distinct()
+            .ToList();
 
         return new ParsedMessage(
             sender.TextContent.Trim(),
             textDiv is null ? "" : ExtractText(textDiv),
             ParseTimestamp(timestamp.TextContent),
             reactions,
-            hasMedia);
+            hasMedia,
+            photos);
+    }
+
+    // Sources look like "your_facebook_activity/messages/inbox/chat_123/photos/456.jpg".
+    // Keeping the part from "photos/" matches the paths the browser sees inside the chosen folder.
+    private static string? PhotoPath(string? source)
+    {
+        if (string.IsNullOrEmpty(source))
+        {
+            return null;
+        }
+
+        var normalised = source.Replace('\\', '/');
+        if (normalised.StartsWith(PhotoFolder, StringComparison.Ordinal))
+        {
+            return normalised;
+        }
+
+        var index = normalised.LastIndexOf("/" + PhotoFolder, StringComparison.Ordinal);
+        return index < 0 ? null : normalised[(index + 1)..];
     }
 
     private static string ExtractText(IElement element)
@@ -161,5 +191,6 @@ public sealed class HtmlChatParser : IChatParser
         string Text,
         DateTime? SentAt,
         IReadOnlyList<Reaction> Reactions,
-        bool HasMedia);
+        bool HasMedia,
+        IReadOnlyList<string> Photos);
 }

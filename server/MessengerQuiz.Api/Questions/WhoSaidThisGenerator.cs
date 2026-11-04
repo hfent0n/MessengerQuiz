@@ -6,12 +6,14 @@ namespace MessengerQuiz.Api.Questions;
 public sealed record WhoSaidThisQuestion(
     string MessageId,
     string Text,
+    IReadOnlyList<string> Photos,
     IReadOnlyList<ContextMessage> Context,
     IReadOnlyList<string> Options,
     string Answer,
     int Reactions);
 
-public sealed record ContextMessage(string Text, bool HasMedia);
+// Photos are paths inside the chat folder. The browser shows them from the player's own files.
+public sealed record ContextMessage(string Text, bool HasMedia, IReadOnlyList<string> Photos);
 
 public sealed class WhoSaidThisGenerator(MessageSelector selector) : IQuestionGenerator<WhoSaidThisQuestion>
 {
@@ -34,8 +36,11 @@ public sealed class WhoSaidThisGenerator(MessageSelector selector) : IQuestionGe
             .Take(MaxOptions - 1);
 
         var options = others.Append(message.Sender).OrderBy(_ => Random.Shared.Next()).ToList();
-        var context = item.Context.Select(earlier => new ContextMessage(earlier.Text, earlier.HasMedia)).ToList();
+        var context = item.Context
+            .Select(earlier => new ContextMessage(earlier.Text, earlier.HasMedia, earlier.Photos))
+            .ToList();
 
-        return new WhoSaidThisQuestion(message.Id, message.Text, context, options, message.Sender, message.Reactions.Count);
+        return new WhoSaidThisQuestion(
+            message.Id, message.Text, message.Photos, context, options, message.Sender, message.Reactions.Count);
     }
 }

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using MessengerQuiz.Api.Questions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -75,9 +76,59 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
         }
 
         var index = question.Text.Split(' ').Last().TrimEnd('.');
+        // The photo wasn't listed as available, so it stays a placeholder.
         Assert.Equal(
-            [new ContextMessage($"First {index}", false), new ContextMessage("", true), new ContextMessage($"Third {index}", false)],
-            question.Context);
+            [($"First {index}", false, 0), ("", true, 0), ($"Third {index}", false, 0)],
+            question.Context.Select(context => (context.Text, context.HasMedia, context.Photos.Count)));
+    }
+
+    [Fact]
+    public async Task PhotoQuestionsOnlyUseAvailablePhotos()
+    {
+        var client = _factory.CreateClient();
+        var messages = Enumerable.Range(0, 12).SelectMany(index => new[]
+        {
+            FakeExport.PhotoAt("Ana", $"Mar 1, 2023 {index + 1}:00:00pm", $"{index}.jpg", ["😆Ben"]),
+            FakeExport.Message("Ben", $"Ben replied with a long enough message, number {index}.", $"Mar 1, 2023 {index + 1}:30:00pm"),
+        }).Reverse().ToArray();
+        var available = Enumerable.Range(0, 6).Select(index => $"photos/{index}.jpg").ToList();
+        var chat = await Upload(client, FakeExport.Page("Photos", messages), JsonSerializer.Serialize(available));
+
+        var questions = new List<WhoSaidThisQuestion>();
+        for (var index = 0; index < chat.EligibleCount; index++)
+        {
+            questions.Add(await GetQuestion(client, chat.ChatId));
+        }
+
+        var photoQuestions = questions.Where(question => question.Photos.Count > 0).ToList();
+        Assert.Equal(6, photoQuestions.Count);
+        Assert.All(photoQuestions, question => Assert.Contains(Assert.Single(question.Photos), available));
+        Assert.All(photoQuestions, question => Assert.Equal("Ana", question.Answer));
+    }
+
+    [Fact]
+    public async Task WithoutAPhotoListPhotosAreNotQuestions()
+    {
+        var client = _factory.CreateClient();
+        var messages = Enumerable.Range(0, 12).SelectMany(index => new[]
+        {
+            FakeExport.PhotoAt("Ana", $"Mar 1, 2023 {index + 1}:00:00pm", $"{index}.jpg", ["😆Ben"]),
+            FakeExport.Message("Ana", $"Ana wrote a long enough message, number {index}.", $"Mar 1, 2023 {index + 1}:20:00pm"),
+            FakeExport.Message("Ben", $"Ben replied with a long enough message, number {index}.", $"Mar 1, 2023 {index + 1}:40:00pm"),
+        }).Reverse().ToArray();
+        var chat = await Upload(client, FakeExport.Page("Photos", messages));
+
+        Assert.Equal(24, chat.EligibleCount);
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("{\"photo\": 1}")]
+    public async Task RejectsAnUnreadablePhotoList(string photos)
+    {
+        var response = await Post(_factory.CreateClient(), FakeExport.QuizzablePage(), photos);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -247,20 +298,22 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
             .ToArray();
     }
 
-    private static async Task<HttpResponseMessage> Post(HttpClient client, string html)
+    private static async Task<HttpResponseMessage> Post(HttpClient client, string html, string? photos = null)
     {
         var content = new ByteArrayContent(Encoding.UTF8.GetBytes(html));
         content.Headers.ContentType = new MediaTypeHeaderValue("text/html");
-
-        return await client.PostAsync("/api/chats", new MultipartFormDataContent
+        var form = new MultipartFormDataContent { { content, "files", "chat/message_1.html" } };
+        if (photos is not null)
         {
-            { content, "files", "chat/message_1.html" },
-        });
+            form.Add(new StringContent(photos), "photos");
+        }
+
+        return await client.PostAsync("/api/chats", form);
     }
 
-    private static async Task<ChatCreated> Upload(HttpClient client, string html)
+    private static async Task<ChatCreated> Upload(HttpClient client, string html, string? photos = null)
     {
-        var response = await Post(client, html);
+        var response = await Post(client, html, photos);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<ChatCreated>())!;
     }

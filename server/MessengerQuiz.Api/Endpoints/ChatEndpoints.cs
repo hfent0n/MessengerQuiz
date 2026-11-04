@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Threading.RateLimiting;
 using MessengerQuiz.Api.Parsing;
 using MessengerQuiz.Api.Selection;
@@ -10,6 +11,9 @@ namespace MessengerQuiz.Api.Endpoints;
 public static class ChatEndpoints
 {
     public const string UploadRateLimitPolicy = "uploads";
+
+    // A JSON array of photo paths inside the chat folder, such as "photos/123.jpg". Only names are sent, never images.
+    private const string AvailablePhotosField = "photos";
 
     public static void MapChatEndpoints(this IEndpointRouteBuilder app)
     {
@@ -54,11 +58,16 @@ public static class ChatEndpoints
             return Problem(StatusCodes.Status413PayloadTooLarge, "This chat is too large to upload.");
         }
 
+        if (!TryReadAvailablePhotos(form, quiz.MaxAvailablePhotos, out var availablePhotos))
+        {
+            return Problem(StatusCodes.Status400BadRequest, "The list of photos couldn't be read.");
+        }
+
         var streams = form.Files.Select(file => (file.FileName, Stream: file.OpenReadStream())).ToList();
         try
         {
             var pages = streams.Select(file => new ChatPage(file.FileName, file.Stream)).ToList();
-            var chat = await parser.ParseAsync(pages, context.RequestAborted);
+            var chat = (await parser.ParseAsync(pages, context.RequestAborted)).KeepPhotos(availablePhotos);
             var eligible = selector.SelectEligible(chat);
 
             if (eligible.Select(message => message.Sender).Distinct().Count() < 2 || eligible.Count < quiz.MinQuizMessages)
@@ -85,6 +94,32 @@ public static class ChatEndpoints
         finally
         {
             streams.ForEach(file => file.Stream.Dispose());
+        }
+    }
+
+    private static bool TryReadAvailablePhotos(IFormCollection form, int maxPhotos, out HashSet<string> photos)
+    {
+        photos = [];
+        var json = form[AvailablePhotosField].ToString();
+        if (json.Length == 0)
+        {
+            return true;
+        }
+
+        try
+        {
+            var paths = JsonSerializer.Deserialize<string[]>(json);
+            if (paths is null || paths.Length > maxPhotos)
+            {
+                return false;
+            }
+
+            photos = [.. paths];
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 

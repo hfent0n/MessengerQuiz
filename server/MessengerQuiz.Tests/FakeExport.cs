@@ -30,12 +30,19 @@ internal static class FakeExport
         return Block(sender, $"<div></div><div>{encoded}</div><div></div><div></div>{Reactions(reactions)}", timestamp);
     }
 
-    public static string Photo(string sender, params string[] reactions) => PhotoAt(sender, DefaultTimestamp, reactions);
+    public const string ChatFolder = "your_facebook_activity/messages/inbox/chat_123";
 
-    public static string PhotoAt(string sender, string timestamp, params string[] reactions)
+    public static string Photo(string sender, params string[] reactions) =>
+        Media(sender, $"{ChatFolder}/photos/p.jpg", DefaultTimestamp, reactions);
+
+    public static string PhotoAt(string sender, string timestamp, string fileName = "p.jpg", string[]? reactions = null) =>
+        Media(sender, $"{ChatFolder}/photos/{fileName}", timestamp, reactions ?? []);
+
+    // Any image the export can reference, such as a GIF or sticker.
+    public static string Media(string sender, string source, string timestamp, params string[] reactions)
     {
-        var photo = """<div><div><a target="_blank" href="p.jpg"><img src="p.jpg" class="_a6_o _3-96" /></a><div></div></div></div>""";
-        return Block(sender, $"<div></div><div></div><div></div><div></div>{photo}{Reactions(reactions)}", timestamp);
+        var image = $"""<div><div><a target="_blank" href="{source}"><img src="{source}" class="_a6_o _3-96" /></a><div></div></div></div>""";
+        return Block(sender, $"<div></div><div></div><div></div><div></div>{image}{Reactions(reactions)}", timestamp);
     }
 
     // The export's group photo entries have an image and no timestamp.

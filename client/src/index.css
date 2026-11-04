@@ -173,8 +173,36 @@ code {
   font-size: 1rem;
 }
 
-.message.media {
+.message.media,
+.photo-missing {
   font-style: italic;
+}
+
+.photo-missing {
+  display: block;
+  color: var(--muted);
+}
+
+.photo {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  border-radius: 10px;
+  object-fit: contain;
+}
+
+.message.context .photo {
+  max-height: 160px;
+}
+
+.photo + .photo,
+.photo + .message-text,
+.photo-missing + .message-text {
+  margin-top: 10px;
+}
+
+.message-text {
+  display: block;
 }
 
 .options {

@@ -7,6 +7,7 @@ public sealed class MessageSelector(IOptions<QuizOptions> options)
 {
     private readonly QuizOptions _options = options.Value;
 
+    // Photo and text messages are ranked together.
     // The most-reacted share of quizzable messages, with at least MinPoolSize so small chats still get a quiz.
     public IReadOnlyList<Message> SelectEligible(Chat chat)
     {
@@ -57,10 +58,12 @@ public sealed class MessageSelector(IOptions<QuizOptions> options)
         return messages[random.Next(messages.Count)];
     }
 
+    // Photos count whatever their caption. Text needs to be long enough to be recognisable.
     private bool IsQuizzable(Message message) =>
-        message.Text.Length >= _options.MinMessageLength
-        && !SystemMessages.IsSystemLine(message.Text)
-        && !SystemMessages.IsLinkOnly(message.Text);
+        message.Photos.Count > 0
+        || (message.Text.Length >= _options.MinMessageLength
+            && !SystemMessages.IsSystemLine(message.Text)
+            && !SystemMessages.IsLinkOnly(message.Text));
 
     private bool WithinContextGap(Message earlier, Message later) =>
         earlier.SentAt is { } earlierTime
