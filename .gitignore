@@ -1,5 +1,6 @@
 # Private message exports: never commit these
 your_activity_across_facebook/
+your_facebook_activity/
 facebook-*/
 facebook-*.zip
 
