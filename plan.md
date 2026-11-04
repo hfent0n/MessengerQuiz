@@ -285,6 +285,8 @@ The chat ID is kept in `sessionStorage`, so it survives a refresh but is cleared
 | Chat ID in a header, not the URL | The ID acts as a password, and URLs reach browser history and request logs |
 | A secret ID rather than accounts | A short-lived game doesn't justify storing user identities |
 | One server instance | Chats exist only in the memory of the instance that received them |
+| Keep the .NET server, rather than running everything in the browser | Multiplayer needs a server to share questions and scores between players' devices, and heavier games such as sentiment analysis may need server-side processing |
+| No pseudonyms or encryption yet | Readable names and text make debugging much easier while the game is built. See [Privacy](#privacy) under future work |
 
 ## Future work
 
@@ -328,3 +330,34 @@ Each is a new `IQuestionGenerator`, scoped to the uploaded chat.
 - Correct client IP handling behind a proxy, or the per-IP limit would treat all users as one.
 - A privacy note explaining what is uploaded and when it's deleted.
 - Scaling past one instance, using sticky sessions or a shared in-memory store. A shared store must not write chats to disk.
+
+### Privacy
+
+Held off while the game is in development, because readable data makes debugging easier. Revisit before it goes live.
+
+The server currently receives the chosen chat's full pages: every message's text, sender and reactor names, timestamps, reactions, links, system lines and media file names. It also sees the player's IP address. Photos, GIFs and videos never leave the browser.
+
+**Pseudonyms**
+
+- The browser replaces each sender and reactor with "Person 1", "Person 2" and so on before upload, keeps the mapping, and shows real names again.
+- This only partly anonymises a chat. Names inside message text, such as mentions, nicknames and system lines, can't be reliably removed.
+
+**Encrypting message text in the browser**
+
+- Selecting messages and building "Who said this?" questions need only metadata: senders, timestamps, ordering, reaction counts and whether a message is a system line. The text itself isn't needed.
+- The browser would parse the chat, encrypt each message's text with its own key and send only metadata plus encrypted text. Questions come back with encrypted text, and the browser decrypts them for display.
+- The server would still learn the number of people, when messages were sent, reaction counts and roughly how long each message is. Padding text to fixed length buckets would blur the lengths.
+- Word-based questions, such as "who used [word] most?", would have to run in the browser, or use keyed hashes of words, which still reveal how often each word appears.
+- Sentiment analysis on the server would conflict with this. It would need to run in the browser, or need the player's explicit consent to send text.
+- Moving parsing to the browser means the server must check the metadata it receives, because it can no longer parse the pages itself.
+
+**Keys the server never sees**
+
+- Generate the key in the browser with Web Crypto (`crypto.subtle.generateKey` with `extractable: false`), so page code can use it but can't read it out. Keep it in IndexedDB so it survives a refresh.
+- For multiplayer, share the key in the link's fragment, such as `/play#key=...`. Browsers never send the part after `#` to the server.
+
+**Limits of any guarantee**
+
+- Encryption protects against a hacked server, accidental logging and memory dumps, but not against a dishonest operator. The same server delivers the page's JavaScript and could serve a version that leaks the key.
+- That risk can be narrowed by making the code open source, hosting the front end separately from the API, for example as a static site built from the public repository, and letting players check in the browser's network tab what's sent.
+- A stronger guarantee would need confidential computing with remote attestation, such as AWS Nitro Enclaves or Azure confidential containers.
