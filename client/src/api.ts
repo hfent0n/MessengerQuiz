@@ -55,6 +55,14 @@ function gzip(blob: Blob): Promise<Blob> {
   return new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob()
 }
 
+// A made-up chat for trying the game without a Facebook export.
+export async function startDemo(): Promise<UploadedChat> {
+  const response = await fetch('/api/chats/demo', { method: 'POST' })
+  if (!response.ok) throw await toApiError(response)
+
+  return response.json()
+}
+
 // Returns null when the chat has no questions left.
 export async function nextQuestion(chatId: string): Promise<Question | null> {
   const response = await fetch('/api/questions/who-said-this', {

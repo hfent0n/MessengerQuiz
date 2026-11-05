@@ -1,6 +1,10 @@
 export type ActiveChat = {
   chatId: string
   title: string
+  // The demo's photos ship with the app, so unlike a player's own media they can be shown again after a refresh.
+  demo?: boolean
+  // Unset until the player picks single player or multiplayer.
+  mode?: 'single' | 'multi'
 }
 
 const STORAGE_KEY = 'messenger-quiz-chat'

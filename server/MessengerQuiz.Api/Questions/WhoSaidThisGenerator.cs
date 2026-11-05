@@ -1,3 +1,4 @@
+using MessengerQuiz.Api.Domain;
 using MessengerQuiz.Api.Selection;
 using MessengerQuiz.Api.Storage;
 
@@ -24,23 +25,23 @@ public sealed class WhoSaidThisGenerator(MessageSelector selector) : IQuestionGe
         var item = session.TakeNext(
             candidates => MessageSelector.PickBalanced(candidates, Random.Shared),
             message => selector.PrecedingContext(session.Chat, session.PositionOf(message)));
-        if (item is null)
-        {
-            return null;
-        }
+        return item is null ? null : Create(session.Chat, item.Message, item.Context);
+    }
 
-        var message = item.Message;
-        var others = session.Chat.Participants
+    // Builds the question for a message that has already been chosen, with up to 4 shuffled options.
+    public static WhoSaidThisQuestion Create(Chat chat, Message message, IReadOnlyList<Message> context)
+    {
+        var others = chat.Participants
             .Where(participant => participant != message.Sender)
             .OrderBy(_ => Random.Shared.Next())
             .Take(MaxOptions - 1);
 
         var options = others.Append(message.Sender).OrderBy(_ => Random.Shared.Next()).ToList();
-        var context = item.Context
-            .Select(earlier => new ContextMessage(earlier.Text, earlier.HasMedia, earlier.Media))
+        var earlier = context
+            .Select(item => new ContextMessage(item.Text, item.HasMedia, item.Media))
             .ToList();
 
         return new WhoSaidThisQuestion(
-            message.Id, message.Text, message.Media, context, options, message.Sender, message.Reactions.Count);
+            message.Id, message.Text, message.Media, earlier, options, message.Sender, message.Reactions.Count);
     }
 }

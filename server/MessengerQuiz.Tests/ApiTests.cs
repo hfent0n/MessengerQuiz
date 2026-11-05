@@ -281,6 +281,24 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
     }
 
     [Fact]
+    public async Task DemoChatsAreSeparateSessions()
+    {
+        var client = _factory.CreateClient();
+
+        var first = await client.PostAsync("/api/chats/demo", null);
+        var second = await client.PostAsync("/api/chats/demo", null);
+
+        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+        var firstChat = (await first.Content.ReadFromJsonAsync<ChatCreated>())!;
+        var secondChat = (await second.Content.ReadFromJsonAsync<ChatCreated>())!;
+        Assert.Equal("Flat 4B 🏠", firstChat.Title);
+        Assert.NotEqual(firstChat.ChatId, secondChat.ChatId);
+
+        var question = await GetQuestion(client, firstChat.ChatId);
+        Assert.Contains(question.Answer, question.Options);
+    }
+
+    [Fact]
     public async Task AcceptsGzippedPages()
     {
         var response = await Post(_factory.CreateClient(), FakeExport.QuizzablePage("Zipped"), gzip: true);

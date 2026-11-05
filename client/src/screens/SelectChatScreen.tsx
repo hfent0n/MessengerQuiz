@@ -1,13 +1,19 @@
 import { useState, type ChangeEvent, type InputHTMLAttributes } from 'react'
 import type { ActiveChat } from '../activeChat'
-import { uploadChat } from '../api'
+import { startDemo, uploadChat } from '../api'
 import { chatFromFolder, chatLabel, groupChats, mediaKind, type ChatSource, type ExportFile } from '../chatFiles'
+import { demoMedia } from '../demoChat'
 
 type Props = {
   onUploaded: (chat: ActiveChat, media: ReadonlyMap<string, ExportFile>) => void
 }
 
-type Step = { kind: 'pick' } | { kind: 'reading' } | { kind: 'choose'; chats: ChatSource[] } | { kind: 'uploading' }
+type Step =
+  | { kind: 'pick' }
+  | { kind: 'reading' }
+  | { kind: 'choose'; chats: ChatSource[] }
+  | { kind: 'uploading' }
+  | { kind: 'demo' }
 
 const folderPickerProps = { webkitdirectory: '' } as InputHTMLAttributes<HTMLInputElement>
 
@@ -68,6 +74,19 @@ export default function SelectChatScreen({ onUploaded }: Props) {
     }
   }
 
+  async function playDemo() {
+    setError(null)
+    setStep({ kind: 'demo' })
+
+    try {
+      const { chatId, title } = await startDemo()
+      onUploaded({ chatId, title, demo: true }, demoMedia())
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Something went wrong. Try again.')
+      setStep({ kind: 'pick' })
+    }
+  }
+
   if (step.kind === 'choose') {
     const query = filter.trim().toLowerCase()
     const shown = step.chats.filter((chat) => chatLabel(chat).toLowerCase().includes(query))
@@ -107,17 +126,28 @@ export default function SelectChatScreen({ onUploaded }: Props) {
   return (
     <section>
       <p>Find out who really knows your group chat.</p>
-      <label className={busy ? 'button primary busy' : 'button primary'}>
-        {step.kind === 'reading' ? 'Reading zips…' : step.kind === 'uploading' ? 'Uploading…' : 'Choose your export zips'}
-        <input
-          type="file"
-          accept=".zip,application/zip"
-          multiple
-          className="visually-hidden"
+      <div className="actions">
+        <label className={busy ? 'button primary busy' : 'button primary'}>
+          {zipButtonLabel(step)}
+          <input
+            type="file"
+            accept=".zip,application/zip"
+            multiple
+            className="visually-hidden"
+            disabled={busy}
+            onChange={handleZips}
+          />
+        </label>
+        <button
+          type="button"
+          className={step.kind === 'demo' ? 'button busy' : 'button'}
           disabled={busy}
-          onChange={handleZips}
-        />
-      </label>
+          onClick={playDemo}
+        >
+          {step.kind === 'demo' ? 'Starting demo…' : 'Try a demo chat'}
+        </button>
+      </div>
+      <p className="note">No Facebook download? The demo is a made-up group chat between four flatmates.</p>
       {error && <p role="alert" className="error">{error}</p>}
       <p className="note">
         Download your Facebook information in HTML format, then choose every zip it came in at once. A chat's photos
@@ -139,6 +169,12 @@ export default function SelectChatScreen({ onUploaded }: Props) {
       </label>
     </section>
   )
+}
+
+function zipButtonLabel(step: Step): string {
+  if (step.kind === 'reading') return 'Reading zips…'
+  if (step.kind === 'uploading') return 'Uploading…'
+  return 'Choose your export zips'
 }
 
 function chatSummary(chat: ChatSource): string {

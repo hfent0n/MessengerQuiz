@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Threading.RateLimiting;
+using MessengerQuiz.Api.Demo;
+using MessengerQuiz.Api.Domain;
 using MessengerQuiz.Api.Parsing;
 using MessengerQuiz.Api.Selection;
 using MessengerQuiz.Api.Storage;
@@ -19,6 +21,7 @@ public static class ChatEndpoints
     public static void MapChatEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/chats", UploadChat).RequireRateLimiting(UploadRateLimitPolicy);
+        app.MapPost("/api/chats/demo", StartDemo).RequireRateLimiting(UploadRateLimitPolicy);
         app.MapDelete("/api/chats/current", DeleteChat);
     }
 
@@ -92,15 +95,7 @@ public static class ChatEndpoints
                     "This chat doesn't have enough messages from different people for a quiz.");
             }
 
-            var session = new ChatSession(chat, eligible);
-            if (!store.TryAdd(session))
-            {
-                return Problem(StatusCodes.Status503ServiceUnavailable, "The server is full. Try again later.");
-            }
-
-            return Results.Created(
-                "/api/chats/current",
-                new ChatCreatedResponse(session.Id, chat.Title, chat.Participants, chat.Messages.Count, eligible.Count));
+            return Store(chat, eligible, store);
         }
         catch (ChatTooLargeException)
         {
@@ -118,6 +113,23 @@ public static class ChatEndpoints
         {
             streams.ForEach(stream => stream.Dispose());
         }
+    }
+
+    // Every demo gets its own session, so players don't share which questions they've had.
+    private static IResult StartDemo(DemoChat demo, MessageSelector selector, ChatStore store) =>
+        Store(demo.Chat, selector.SelectEligible(demo.Chat), store);
+
+    private static IResult Store(Chat chat, IReadOnlyList<Message> eligible, ChatStore store)
+    {
+        var session = new ChatSession(chat, eligible);
+        if (!store.TryAdd(session))
+        {
+            return Problem(StatusCodes.Status503ServiceUnavailable, "The server is full. Try again later.");
+        }
+
+        return Results.Created(
+            "/api/chats/current",
+            new ChatCreatedResponse(session.Id, chat.Title, chat.Participants, chat.Messages.Count, eligible.Count));
     }
 
     private static bool TryReadAvailableMedia(IFormCollection form, int maxPaths, out HashSet<string> media)

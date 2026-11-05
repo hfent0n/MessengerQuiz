@@ -111,6 +111,11 @@ code {
   font-weight: 600;
 }
 
+.button:disabled:not(.busy) {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .button.busy {
   cursor: progress;
   opacity: 0.7;
@@ -290,4 +295,291 @@ code {
 .attachment-loading {
   display: block;
   color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+h3 {
+  margin: 24px 0 8px;
+  font-size: 1rem;
+}
+
+.mode-options {
+  display: grid;
+  gap: 10px;
+}
+
+.mode-option {
+  display: block;
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mode-option:hover {
+  border-color: var(--accent);
+}
+
+.mode-name {
+  display: block;
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.mode-option .note {
+  display: block;
+}
+
+.form {
+  display: grid;
+  gap: 20px;
+  margin-top: 16px;
+}
+
+/* The input inside shows focus itself, so the label's outline isn't needed. */
+.field:focus-within {
+  outline: none;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.field-label {
+  padding: 0;
+  font-weight: 600;
+}
+
+.field .note {
+  margin: 0;
+}
+
+.text-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.choice {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.choice.chosen {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.warning {
+  padding: 10px 14px;
+  border-left: 4px solid var(--wrong);
+  border-radius: 6px;
+  background: var(--wrong-surface);
+  font-size: 0.925rem;
+}
+
+.copy-link {
+  display: flex;
+  gap: 8px;
+}
+
+.copy-link .text-input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+}
+
+.lobby-players {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.lobby-players li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tag {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.game {
+  display: grid;
+  gap: 20px;
+}
+
+@media (min-width: 900px) {
+  .app:has(.game) {
+    max-width: 960px;
+  }
+
+  .game {
+    grid-template-columns: 240px 1fr;
+    align-items: start;
+  }
+}
+
+.score-bars {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.score-bar-label {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 0.925rem;
+}
+
+.score-bar.you .score-bar-name {
+  font-weight: 600;
+}
+
+.score-bar-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.score-bar-status {
+  flex: 1;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.score-bar-score {
+  font-variant-numeric: tabular-nums;
+}
+
+.points {
+  color: var(--correct);
+  font-weight: 600;
+}
+
+.bar {
+  height: 10px;
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.6s ease;
+}
+
+.round .prompt {
+  margin-top: 0;
+}
+
+.countdown {
+  position: relative;
+  height: 24px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.countdown-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+
+.countdown-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.option.chosen {
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.pickers {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.headline {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.results {
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+}
+
+.results li {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.results li.you {
+  font-weight: 600;
+}
+
+.place {
+  width: 1.5em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.results-name {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.results-score {
+  font-variant-numeric: tabular-nums;
 }

@@ -10,4 +10,8 @@
     <PackageReference Include="AngleSharp" Version="1.9.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Demo/demo-chat.json" />
+  </ItemGroup>
+
 </Project>

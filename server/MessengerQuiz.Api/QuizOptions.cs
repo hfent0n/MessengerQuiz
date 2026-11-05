@@ -31,6 +31,16 @@ public sealed class QuizOptions
     // The most media paths one upload can list as available.
     public int MaxAvailableMedia { get; set; } = 50_000;
 
+    // Multiplayer.
+    public int MaxPlayers { get; set; } = 8;
+    public int QuestionsPerGame { get; set; } = 10;
+    public int[] TimeLimitSeconds { get; set; } = [10, 20, 30, 60];
+    public int MaxRoomsPerChat { get; set; } = 5;
+    public int RoomRequestsPerMinutePerIp { get; set; } = 20;
+
+    // Answers this long after the deadline still count, to allow for network delay.
+    public TimeSpan AnswerGrace { get; set; } = TimeSpan.FromSeconds(1);
+
     // Below this many messages, the chat is rejected as too small to quiz on.
     public int MinQuizMessages { get; set; } = 10;
 }

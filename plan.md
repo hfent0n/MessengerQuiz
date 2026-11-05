@@ -6,7 +6,7 @@ A web game where a player uploads one Facebook Messenger chat and is quizzed on 
 - **Frontend:** React, TypeScript and Vite
 - **Storage:** none. Chats stay in memory and are never written to disk.
 
-"Who said this?" from a single uploaded chat is built. Everything else is under [Future work](#future-work).
+"Who said this?" from a single uploaded chat is built, in single player and [multiplayer](#multiplayer). Everything else is under [Future work](#future-work).
 
 ## Running it
 
@@ -105,6 +105,10 @@ An unzipped chat folder can still be chosen instead. If it has no message pages 
 |---|---|---|
 | `POST` | `/api/chats` | Upload and parse one chat |
 | `GET` | `/api/questions/who-said-this` | Get the next question |
+| `POST` | `/api/chats/demo` | Start a quiz on the built-in demo chat |
+| `POST` | `/api/rooms` | Create a multiplayer game from the chat in `X-Chat-Id` |
+| `POST` | `/api/rooms/{code}/players` | Join a game in its lobby |
+| WebSocket | `/api/rooms/hub` | Play a game live, through SignalR |
 | `DELETE` | `/api/chats/current` | Wipe the chat from memory |
 
 The `GET` and `DELETE` routes identify the chat with an `X-Chat-Id` header. The ID acts as a password, so it stays out of URLs, where it would reach browser history and request logs.
@@ -136,6 +140,12 @@ Multipart form with one or more `message_*.html` files, all from the same chat, 
 | `503` | The server's memory cap is reached, or too many chats are already being parsed |
 
 Kestrel's default body limit is 30 MB. The endpoint sets its own 50 MB limit, so the cap is deliberate and leaves room for larger chats than this export contains.
+
+### `POST /api/chats/demo`
+
+No body. Starts a new session on a made-up chat, "Flat 4B", so people without a Facebook export can try the game. It returns the same response as an upload and shares its rate limit. Every call gets its own session, so players don't share which questions they've had.
+
+The chat is `Demo/demo-chat.json`, embedded in the API. Each message has a sender, text or media, reactions, and either an `at` time or `after`, the minutes since the previous message. Its three photos are SVGs in `client/public/demo/photos`, and the client lists them in `demoChat.ts`. The demo's photos ship with the app, so unlike a player's media they still show after a refresh.
 
 ### `GET /api/questions/who-said-this`
 
@@ -286,7 +296,86 @@ The chat ID is kept in `sessionStorage`, so it survives a refresh but is cleared
 | A secret ID rather than accounts | A short-lived game doesn't justify storing user identities |
 | One server instance | Chats exist only in the memory of the instance that received them |
 | Keep the .NET server, rather than running everything in the browser | Multiplayer needs a server to share questions and scores between players' devices, and heavier games such as sentiment analysis may need server-side processing |
+| Multiplayer is text only at first | Media only exists in the host's browser, and sending it to the server would break "media never leaves your device" |
+| The server scores multiplayer answers | Sending answers with questions lets players read them in developer tools |
+| Ready step after each reveal, with disconnected players skipped | Players get time to react to the message, and a player who leaves can't stall the game |
+| A built-in demo chat | Recruiters and other visitors can try the game without requesting a Facebook download |
 | No pseudonyms or encryption yet | Readable names and text make debugging much easier while the game is built. See [Privacy](#privacy) under future work |
+
+## Multiplayer
+
+Built. Up to 8 people play 10 "Who said this?" questions from one chat, each on their own device, with live scores.
+
+### Flow
+
+1. After choosing a chat or the demo, the player picks **Single player** or **Multiplayer**. Single player is the current game.
+2. For multiplayer, the host enters their name and a time limit per question: 10, 20, 30 or 60 seconds, defaulting to 20.
+3. The server creates a room and returns a link such as `/play/k7f3q9xw2m`. The host sees it with a copy button and a warning: "Anyone with this link will see messages from this chat. Only share it with people in the chat."
+4. Other players open the link, enter a name and appear in the lobby. Joining is only possible in the lobby. After the game starts, the link shows "This game has already started".
+5. The host presses **Start** once at least one other player has joined.
+6. Every player sees the same question and a countdown. A player is finished when they answer or their time runs out.
+7. When everyone is finished, the reveal shows the right answer, what each player picked and the points they scored. Each player presses **Ready**, and the next question starts when every connected player is ready.
+8. After the last question, a results screen shows the ranking and a **Rematch** button for the host, which starts 10 new questions from the same chat with the same players.
+
+Each player has a score bar that fills towards the most points possible in the game, so bars can be compared at a glance.
+
+### Rules
+
+- **Questions:** 10 per game, or as many as the chat has if fewer. They're chosen when the game starts, with the same selection as single player. A room keeps its own record of what's been asked, so it doesn't use up the host's single-player questions, and a rematch avoids questions from earlier games in that room.
+- **Text only:** questions with photos, GIFs or videos are left out, and so is media context, because media only exists in the host's browser. Context messages that had media show "Sent something that can't be shown". See [future work](#game) for sharing media.
+- **Scores during a question:** other players' scores and ranking leave out that question's points until the reveal, so a rising score can't show who got it right. Players can see who has answered, but not what.
+- **Scoring:** a wrong answer or no answer scores 0. A right answer scores 500 points plus up to 500 more for speed, falling in a straight line from the moment the question appears to the deadline. Ties are broken by total answer time.
+- **Names:** trimmed, 1 to 20 characters, letters and digits only, with single spaces between words. Unicode letters are allowed, so names such as "José" work. Control characters and invisible characters are rejected. Names must be unique in the room, ignoring case. React escapes names when it shows them, so they can't inject HTML.
+- **Players:** up to 8, including the host.
+
+### Server
+
+- **SignalR hub** at `/api/rooms/hub`, built into ASP.NET, for real-time events: player joined or left, game started, question started, player answered, reveal, player ready and game over.
+- **The server runs the game.** Rooms are held in memory alongside their chat, with the players, the questions, the answers, the scores and the deadlines. Each room has its own lock, as chats do.
+- **Answers stay on the server.** Questions are sent without their answer. The server scores each guess and sends the answer only at the reveal, so nobody can read it in developer tools.
+- **The server owns the timer.** Each question carries its deadline. The server allows about 1 second of slack for network delay, then ends the question itself, so a player in a background tab or with a dropped connection can't stall the game.
+- **Room codes** are random and unguessable, about 10 characters from an unambiguous alphabet, giving roughly 50 bits. They're separate from the chat ID, which never appears in a link. Joining is rate-limited per IP address.
+- **Player tokens:** joining returns a secret token, kept in `sessionStorage`. After a refresh or a dropped connection, the token puts the player back in their seat with their score.
+- **Disconnects:** a disconnected player's questions time out as wrong. Disconnected players don't hold up the Ready step. If the host disconnects, the game carries on.
+- **Ending a game:** wiping the chat ends the room, and every player sees "The host ended the game". Rooms otherwise expire with their chat. `ChatStore` raises `Removed` when a chat is wiped or expires, and `GameService` ends that chat's rooms. Playing counts as using the chat, so it doesn't expire mid-game.
+- **Endpoints:** `POST /api/rooms` takes `{ name, timeLimitSeconds }` and the host's `X-Chat-Id`. `POST /api/rooms/{code}/players` takes `{ name }`. Both return `{ code, playerToken }` and share a rate limit of 20 per minute per IP address. A chat can have up to 5 games at once.
+- **Hub methods:** `Connect(code, token)`, `Start()`, which is also used for a rematch, `Answer(option)` and `Ready()`. Each returns an error to show, or null. After every change, each player gets their own `room` event, which has a version number so the client can ignore updates that arrive out of order.
+- **Time in tests:** timers use .NET's `TimeProvider`, so tests can move the clock forward instead of waiting.
+
+### Client
+
+- **Routing.** A join link has to open the join screen instead of the home screen, so `routes.ts` reads `location.pathname` and shows the game for `/play/<code>`. Players who haven't joined from that tab choose a name first. A routing library isn't needed for one route. In production, whatever serves the client must return `index.html` for `/play/...` paths too. Vite already does this in development.
+- **Screens:**
+  - mode choice
+  - host setup, with name and time limit
+  - lobby, with the link, the players and Start
+  - join, with a name
+  - question, with the countdown and score bars
+  - reveal, with everyone's picks, points and Ready
+  - results
+- **Score bars** sit beside the question on wide screens and above it on phones, labelled with each name and score.
+
+### Tests
+
+- Integration tests that drive real SignalR connections through `WebApplicationFactory`. They cover:
+  - a two-player game from start to finish
+  - eight players
+  - joining after the start
+  - a full room
+  - duplicate and invalid names
+  - an answer after the deadline
+  - a timeout that scores 0
+  - reconnecting with a token
+  - Ready with a disconnected player
+  - a rematch
+  - wiping the chat mid-game
+- Checks that questions never include the answer before the reveal, and that a guessed room code can't be joined.
+- Unit tests for scoring at the start of a question, halfway through and at the deadline, and for the tie-breaker.
+
+### Hosting
+
+- WebSockets must pass through any reverse proxy, with a fallback to long polling, which SignalR handles.
+- Rooms live in one server instance's memory, like chats. Scaling past one instance would need sticky sessions or a SignalR backplane.
 
 ## Future work
 
@@ -320,7 +409,8 @@ Each is a new `IQuestionGenerator`, scoped to the uploaded chat.
 - Quizzes that mix question types.
 - Difficulty settings driven by `SelectionCriteria`.
 - End-of-round summary and shareable score.
-- Multiplayer in one room, which would move answer checking to the server.
+- Photos, GIFs and videos in multiplayer, sent from the host's browser directly to the other players with WebRTC, so they still never reach the server. The server would only pass connection messages between browsers. Some networks block direct connections, which would need a relay (TURN) server, so media questions should be skipped when the connection fails.
+- Watching a multiplayer game in progress.
 
 ### Hosting
 

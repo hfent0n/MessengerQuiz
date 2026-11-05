@@ -9,7 +9,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': apiUrl,
+      // ws lets the multiplayer game's SignalR connection use WebSockets through the proxy.
+      '/api': { target: apiUrl, ws: true },
     },
   },
 })

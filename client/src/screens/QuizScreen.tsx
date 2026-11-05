@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { ActiveChat } from '../activeChat'
-import { ApiError, nextQuestion, type ContextMessage, type Question } from '../api'
-import { mediaKind, type ExportFile } from '../chatFiles'
-import ChatMedia from '../components/ChatMedia'
+import { ApiError, nextQuestion, type Question } from '../api'
+import type { ExportFile } from '../chatFiles'
+import MessageThread from '../components/MessageThread'
+import { questionPrompt, reactionSummary } from '../questionText'
 
 type Props = {
   chat: ActiveChat
@@ -80,18 +81,13 @@ export default function QuizScreen({ chat, media, onWipe, onExpired }: Props) {
 
       {(round.status === 'asking' || round.status === 'answered') && (
         <>
-          <p className="prompt">{prompt(round.question)}</p>
-          <div className="thread">
-            {round.question.context.map((message, index) => (
-              <ContextBubble key={index} message={message} media={media} />
-            ))}
-            <blockquote className="message">
-              {round.question.media.map((path) => (
-                <ChatMedia key={path} path={path} file={media.get(path)} />
-              ))}
-              {round.question.text && <span className="message-text">{round.question.text}</span>}
-            </blockquote>
-          </div>
+          <p className="prompt">{questionPrompt(round.question)}</p>
+          <MessageThread
+            text={round.question.text}
+            media={round.question.media}
+            context={round.question.context}
+            files={media}
+          />
           <div className="options">
             {round.question.options.map((option) => (
               <button
@@ -122,37 +118,8 @@ export default function QuizScreen({ chat, media, onWipe, onExpired }: Props) {
   )
 }
 
-function ContextBubble({ message, media }: { message: ContextMessage; media: ReadonlyMap<string, ExportFile> }) {
-  if (message.media.length === 0 && !message.text) {
-    // A sticker, voice message, or a photo or video missing from the export.
-    return <p className="message context media">Sent something that can't be shown</p>
-  }
-
-  return (
-    <div className="message context">
-      {message.media.map((path) => (
-        <ChatMedia key={path} path={path} file={media.get(path)} />
-      ))}
-      {message.text && <span className="message-text">{message.text}</span>}
-    </div>
-  )
-}
-
-function prompt(question: Question): string {
-  if (question.context.length > 0) return 'Who sent these messages?'
-  if (question.media.length === 0 || question.text) return 'Who said this?'
-  return `Who sent this ${PROMPT_NAMES[mediaKind(question.media[0])]}?`
-}
-
-const PROMPT_NAMES = { photo: 'photo', gif: 'GIF', video: 'video' } as const
-
 function optionClass(round: Round, option: string): string {
   if (round.status !== 'answered') return 'button option'
   if (option === round.question.answer) return 'button option correct'
   return option === round.choice ? 'button option wrong' : 'button option'
-}
-
-function reactionSummary(reactions: number): string {
-  if (reactions === 0) return ''
-  return reactions === 1 ? 'It got 1 reaction.' : `It got ${reactions} reactions.`
 }

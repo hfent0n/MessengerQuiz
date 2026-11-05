@@ -6,6 +6,9 @@ namespace MessengerQuiz.Api.Storage;
 public sealed class ChatStore(IOptions<QuizOptions> options) : IDisposable
 {
     private readonly QuizOptions _options = options.Value;
+    // Raised with the chat's ID when it's wiped or expires, so games using it can end.
+    public event Action<string>? Removed;
+
     private readonly MemoryCache _cache = new(new MemoryCacheOptions { SizeLimit = options.Value.ChatMemoryCapBytes });
 
     // Returns false when the memory cap is reached.
@@ -17,6 +20,20 @@ public sealed class ChatStore(IOptions<QuizOptions> options) : IDisposable
             SlidingExpiration = _options.ChatExpiry,
             // Stops the cache evicting active players' chats to make room for a new upload.
             Priority = CacheItemPriority.NeverRemove,
+            PostEvictionCallbacks =
+            {
+                new PostEvictionCallbackRegistration
+                {
+                    EvictionCallback = (key, _, reason, _) =>
+                    {
+                        // Replaced means the same chat was stored again, so it hasn't gone.
+                        if (reason != EvictionReason.Replaced)
+                        {
+                            Removed?.Invoke((string)key);
+                        }
+                    },
+                },
+            },
         });
 
         return _cache.TryGetValue(session.Id, out _);
