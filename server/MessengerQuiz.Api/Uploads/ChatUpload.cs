@@ -5,7 +5,13 @@ using MessengerQuiz.Api.Domain;
 namespace MessengerQuiz.Api.Uploads;
 
 // What the browser uploads. The server can't read the sealed parts, so it checks everything else instead.
-public sealed record ChatUpload(string? Title, string? People, int PersonCount, IReadOnlyList<UploadedMessage>? Messages);
+public sealed record ChatUpload(
+    string? Title,
+    string? People,
+    int PersonCount,
+    IReadOnlyList<UploadedMessage>? Messages,
+    // People the browser recognised as automated accounts, such as Meta AI. Optional.
+    IReadOnlyList<int>? Automated = null);
 
 public sealed record UploadedMessage(
     int Sender,
@@ -72,7 +78,13 @@ public static partial class ChatUploads
                 message.Sealed!));
         }
 
-        chat = new Chat(upload.Title!, upload.People!, upload.PersonCount, accepted);
+        var automated = upload.Automated ?? [];
+        if (automated.Any(person => person < 0 || person >= upload.PersonCount))
+        {
+            return false;
+        }
+
+        chat = new Chat(upload.Title!, upload.People!, upload.PersonCount, accepted) { Automated = automated.ToHashSet() };
         return true;
     }
 

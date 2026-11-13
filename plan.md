@@ -126,9 +126,12 @@ JSON, usually gzipped, which the server detects from its first two bytes. The br
   "personCount": 4,
   "messages": [
     { "sender": 2, "sentAt": 1709300000, "reactions": 3, "media": 0, "quizzable": true, "system": false, "sealed": "<sealed>" }
-  ]
+  ],
+  "automated": [5]
 }
 ```
+
+`automated` lists the people the browser recognised by name as Messenger's automated accounts, Meta AI and Live Updates. It's optional.
 
 A message's place in the list is its position, which its sealed box is bound to. `sentAt` is seconds since 1970, or null.
 
@@ -168,6 +171,8 @@ A made-up chat, "Flat 4B", so people without a Facebook export can try the game.
 ```
 
 Options and the answer are people's numbers. The browser opens the boxes and shows names from its own copy of the people list.
+
+Wrong answers only come from people who sent at least one eligible message, so someone who never features is never offered. Automated accounts are picked as wrong answers 20 times less often than people, but are still the answer to their own messages.
 
 | Status | When |
 |---|---|
@@ -427,6 +432,7 @@ Built. The hosted site takes real chats, with **message text and people's names 
 | Message order, and which person sent each one | Readable | Still readable, as numbers |
 | Whether a message can be a question | Worked out by the server | Worked out by the browser and sent as a flag |
 | Player's IP address and multiplayer player names | Readable | Still readable |
+| Which people are Meta AI and Live Updates | Readable | Sent as numbers, so they're rarely offered as options |
 
 ### Design
 

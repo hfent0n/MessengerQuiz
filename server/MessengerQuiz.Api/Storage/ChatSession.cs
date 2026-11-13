@@ -17,6 +17,10 @@ public sealed class ChatSession(Chat chat, IReadOnlyList<Message> eligible)
     public Chat Chat { get; } = chat;
     public IReadOnlyList<Message> Eligible { get; } = eligible;
 
+    // Only people who sent a top message are offered as options. Someone who never features, such as an automated
+    // account, would be an obviously wrong answer.
+    public IReadOnlyList<int> OptionPeople { get; } = eligible.Select(message => message.Sender).Distinct().Order().ToList();
+
     // Strings take 2 bytes per character in .NET.
     public long EstimatedBytes { get; } =
         (chat.Title.Length + chat.People.Length) * 2L

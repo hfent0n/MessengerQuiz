@@ -242,7 +242,7 @@ public sealed class GameService : IDisposable
             && MessageSelector.PickBalanced(candidates, Random.Shared) is { } pick)
         {
             var context = _selector.PrecedingContext(chat, pick.Position);
-            questions.Add(WhoSaidThisGenerator.Create(chat, pick, context));
+            questions.Add(WhoSaidThisGenerator.Create(room.Session, pick, context));
 
             var shown = context.Select(message => message.Position).Append(pick.Position).ToHashSet();
             candidates.RemoveAll(message => shown.Contains(message.Position));

@@ -112,6 +112,51 @@ public class WhoSaidThisGeneratorTests
         Assert.Equal(2, _generator.Next(new ChatSession(chat, [chat.Messages[0]]))!.MediaCount);
     }
 
+    [Fact]
+    public void PeopleWithNoTopMessagesAreNeverOptions()
+    {
+        // Person 3 sent a message, but not one that made the top messages.
+        var chat = Chat(4, [.. Enumerable.Range(0, 30).Select(index => Message(sender: index % 3)), Message(sender: 3)]);
+        var session = new ChatSession(chat, chat.Messages.Take(30).ToList());
+
+        var options = Enumerable.Range(0, 30).SelectMany(_ => _generator.Next(session)!.Options).ToHashSet();
+
+        Assert.Equal([0, 1, 2], options.Order());
+    }
+
+    [Fact]
+    public void AutomatedAccountsAreRarelyOptions()
+    {
+        // Five people and one automated account, all with top messages. Each question has three wrong answers.
+        var chat = Chat(6, Enumerable.Range(0, 6000).Select(index => Message(sender: index % 6))) with { Automated = new HashSet<int> { 5 } };
+        var session = new ChatSession(chat, chat.Messages);
+        var counts = new int[6];
+
+        for (var index = 0; index < 5000; index++)
+        {
+            var question = _generator.Next(session)!;
+            foreach (var option in question.Options.Where(option => option != question.Answer))
+            {
+                counts[option]++;
+            }
+        }
+
+        // Answers are balanced across senders. Each person should be a wrong answer about 2,970 times, and the
+        // account about 150 times, 20 times less often.
+        Assert.All(counts[..5], count => Assert.InRange(count, 2700, 3250));
+        Assert.InRange(counts[5], 60, 300);
+    }
+
+    [Fact]
+    public void AutomatedAccountsAreStillTheAnswerToTheirOwnMessages()
+    {
+        var chat = Chat(3, Message(sender: 2), Message(sender: 0), Message(sender: 1)) with { Automated = new HashSet<int> { 2 } };
+        var question = _generator.Next(new ChatSession(chat, [chat.Messages[0]]))!;
+
+        Assert.Equal(2, question.Answer);
+        Assert.Contains(2, question.Options);
+    }
+
     private static ChatSession Session(int people, int messageCount)
     {
         var chat = Chat(people, Enumerable.Range(0, messageCount).Select(index => Message(sender: index % people)));

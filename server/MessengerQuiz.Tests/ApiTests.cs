@@ -185,6 +185,7 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
             { "a box too short to be sealed", Replace(good, first with { Sealed = "abc" }) },
             { "a missing box", Replace(good, first with { Sealed = null }) },
             { "a box that's too long", Replace(good, first with { Sealed = new string('a', 100_001) }) },
+            { "an automated account who isn't in the chat", good with { Automated = [3] } },
         };
     }
 

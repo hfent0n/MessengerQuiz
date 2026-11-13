@@ -9,7 +9,11 @@ public sealed record Chat(
     // People are numbered from 0, most messages first.
     int PersonCount,
     // Oldest first.
-    IReadOnlyList<Message> Messages);
+    IReadOnlyList<Message> Messages)
+{
+    // Automated accounts, such as Meta AI, that the browser recognised by name. They're rarely offered as options.
+    public IReadOnlySet<int> Automated { get; init; } = new HashSet<int>();
+}
 
 public sealed record Message(
     // The message's place in the chat. Its sealed box only opens with this position, so it can't be moved.

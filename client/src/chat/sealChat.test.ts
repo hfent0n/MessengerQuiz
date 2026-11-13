@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import * as fake from '../test/fakeExport'
 import { demoChat } from './demoChat'
 import { parseChat } from './parseChat'
-import { sealChat, type SealedMessage } from './sealChat'
+import { isAutomated, sealChat, type SealedMessage } from './sealChat'
 import { labels, newChatKey, open } from './sealing'
 
 const LONG = 'A made-up message that is long enough to be a question.'
@@ -61,6 +61,29 @@ describe('sealChat', () => {
       { sender: 0, sentAt: chat.messages[2].sentAt, reactions: 0, media: 0, quizzable: false, system: true },
       { sender: 1, sentAt: chat.messages[3].sentAt, reactions: 0, media: 0, quizzable: false, system: false },
     ])
+  })
+
+  it('marks automated accounts by number, so the server never sees their names', async () => {
+    const chat = parseChat([
+      fake.page('Friends', fake.message('Ana', LONG), fake.message('Meta AI', LONG), fake.message('Live Updates', LONG)),
+    ])
+
+    const upload = await sealChat(chat, await newChatKey(), new Set())
+
+    expect(upload.automated.map((person) => chat.people[person]).sort()).toEqual(['Live Updates', 'Meta AI'])
+    expect(JSON.stringify(upload)).not.toContain('Meta')
+  })
+
+  it.each([
+    ['Meta AI', true],
+    ['meta ai', true],
+    ['MetaAI', true],
+    ['Live Updates', true],
+    ['Live updates', true],
+    ['Meta Aiden', false],
+    ['Ana', false],
+  ])('recognises automated senders: %s', (name, automated) => {
+    expect(isAutomated(name)).toBe(automated)
   })
 
   it('only counts media the player has', async () => {

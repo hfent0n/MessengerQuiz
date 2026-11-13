@@ -21,6 +21,7 @@ Right now there's one question type, **"Who said this?"**. It picks the chat's m
 **What it can see:**
 
 - how many people are in the chat, as numbers rather than names
+- which of those numbers are Messenger's automated accounts, Meta AI and Live Updates
 - when each message was sent, and which numbered person sent it
 - how many reactions and photos each message has, and roughly how long it is
 - your IP address, and the names players choose in multiplayer

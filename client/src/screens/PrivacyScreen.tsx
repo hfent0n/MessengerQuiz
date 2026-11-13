@@ -25,6 +25,7 @@ export default function PrivacyScreen() {
       <h3>The server can see</h3>
       <ul>
         <li>How many people are in the chat, numbered rather than named</li>
+        <li>Which of those numbers are Messenger's automated accounts, Meta AI and Live Updates</li>
         <li>When each message was sent, and which numbered person sent it</li>
         <li>How many reactions and photos each message has, and roughly how long it is</li>
         <li>Which messages can be questions, so it can choose them</li>

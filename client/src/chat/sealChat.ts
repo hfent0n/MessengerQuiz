@@ -8,6 +8,8 @@ export type ChatUpload = {
   people: string
   personCount: number
   messages: UploadedMessage[]
+  // People who are automated accounts, such as Meta AI. The server rarely offers them as options.
+  automated: number[]
 }
 
 export type UploadedMessage = {
@@ -30,6 +32,13 @@ export type SealedMessage = {
   // Anything shown as media, including stickers and voice messages.
   hasMedia: boolean
   media: string[]
+}
+
+// Senders that are Messenger features rather than people. Compared ignoring case, spaces and punctuation.
+const AUTOMATED_SENDERS = new Set(['metaai', 'liveupdates'])
+
+export function isAutomated(name: string): boolean {
+  return AUTOMATED_SENDERS.has(name.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''))
 }
 
 // Media the player doesn't have is left out, since it can't be shown. Exports often leave out older media.
@@ -58,5 +67,6 @@ export async function sealChat(chat: Chat, key: CryptoKey, availableMedia: Reado
     people: await seal(key, labels.people, chat.people),
     personCount: chat.people.length,
     messages,
+    automated: chat.people.flatMap((person, index) => (isAutomated(person) ? [index] : [])),
   }
 }
