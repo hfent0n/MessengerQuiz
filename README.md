@@ -114,9 +114,9 @@ Photos and videos can't be shown again after you refresh the page, because brows
 ### Multiplayer
 
 1. After choosing a chat or the demo, pick **Multiplayer**.
-2. Enter your name and choose how long each question lasts. The default is 20 seconds.
+2. Enter your name, choose how long each question lasts, and how many questions to play: 5, 10, 20 or **Endless**. The defaults are 20 seconds and 10 questions. An endless game keeps going until you press **End game and declare the winner** after any question.
 3. Send the link to up to 7 other people. Anyone with the link sees messages from the chat, so only share it with people in the chat.
-4. When everyone has joined, press **Start the game**. Everyone gets the same 10 questions. Right answers score 500 points, plus up to 500 more for answering quickly.
+4. When everyone has joined, press **Start the game**. Everyone gets the same questions. Right answers score 500 points, plus up to 500 more for answering quickly.
 5. After each question, everyone sees the answer and each other's picks, then presses **Ready** for the next one.
 6. Chat and send quick reactions at any time. Chat messages are encrypted with the link's key, like the questions.
 

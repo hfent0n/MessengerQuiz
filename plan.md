@@ -347,6 +347,15 @@ Each player has a score bar that fills towards the most points possible in the g
 - **Names:** trimmed, 1 to 20 characters, letters and digits only, with single spaces between words. Unicode letters are allowed, so names such as "José" work. Control characters and invisible characters are rejected. Names must be unique in the room, ignoring case. React escapes names when it shows them, so they can't inject HTML.
 - **Players:** up to 8, including the host.
 
+### Game length
+
+Built. The host picks 5, 10 or 20 questions, or **Endless**, when creating the game. The default is 10.
+
+- **Endless** takes every text question the chat has left and keeps going until they run out, or until the host presses **End game and declare the winner**. That button shows only for the host, only in endless mode, and only after a reveal, so nobody's answer to an open question is lost. The hub method is `Declare`.
+- **The header** shows "Question 3" instead of "3 / 10".
+- **Score bars** fill relative to the questions asked so far.
+- **`POST /api/rooms`** takes an optional `questionCount`, one of `Quiz:QuestionCounts`, or `endless: true`. The room view has an `endless` flag, and its `questionCount` is how many questions the chat can still give.
+
 ### Chat and quick reactions
 
 Built. Players can chat and react at any time, including during questions, by choice: it's a social game, so giving away an answer is up to the players.

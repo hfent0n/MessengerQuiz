@@ -13,7 +13,7 @@ type Connection = {
   send: (method: Action, ...args: (string | number)[]) => Promise<string | null>
 }
 
-export type Action = 'Start' | 'Answer' | 'Ready' | 'Chat' | 'React'
+export type Action = 'Start' | 'Answer' | 'Ready' | 'Chat' | 'React' | 'Declare'
 
 // How long a reaction stays on screen.
 const REACTION_MS = 2500

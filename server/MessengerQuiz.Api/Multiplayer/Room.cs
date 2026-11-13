@@ -9,7 +9,8 @@ public enum JoinOutcome { Joined, AlreadyStarted, Full, NameTaken }
 
 // The game's rules. Callers hold Gate while using a room, so its methods don't lock themselves.
 // Methods that take the time are given it, which keeps the rules easy to test.
-public sealed class Room(string code, string chatId, ChatSession session, TimeSpan timeLimit, int maxPlayers)
+public sealed class Room(
+    string code, string chatId, ChatSession session, TimeSpan timeLimit, int maxPlayers, int? questionLimit = 10)
 {
     private readonly List<Player> _players = [];
     private readonly HashSet<int> _askedPositions = [];
@@ -29,6 +30,10 @@ public sealed class Room(string code, string chatId, ChatSession session, TimeSp
     public ChatSession Session { get; } = session;
     public TimeSpan TimeLimit { get; } = timeLimit;
     public int MaxPlayers { get; } = maxPlayers;
+
+    // How many questions a game has, or null for endless: until the chat runs out or the host ends it.
+    public int? QuestionLimit { get; } = questionLimit;
+    public bool Endless => QuestionLimit is null;
 
     public RoomStage Stage { get; private set; } = RoomStage.Lobby;
 
@@ -175,6 +180,24 @@ public sealed class Room(string code, string chatId, ChatSession session, TimeSp
             _chat.RemoveAt(0);
         }
 
+        Changed();
+        return true;
+    }
+
+    // In endless mode, the host ends the game after a reveal and everyone sees the results. Only after a reveal, so
+    // nobody's answer to the current question is lost.
+    public bool CanDeclare(Player player) => player.IsHost && Endless && Stage == RoomStage.Reveal;
+
+    public bool Declare(Player player)
+    {
+        if (!CanDeclare(player))
+        {
+            return false;
+        }
+
+        _answers.Clear();
+        _ready.Clear();
+        Stage = RoomStage.Finished;
         Changed();
         return true;
     }

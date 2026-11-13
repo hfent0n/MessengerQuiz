@@ -41,7 +41,9 @@ public sealed class QuizOptions
 
     // Multiplayer.
     public int MaxPlayers { get; set; } = 8;
+    // The host picks how many questions a game has. Endless keeps going until the chat runs out or the host ends it.
     public int QuestionsPerGame { get; set; } = 10;
+    public int[] QuestionCounts { get; set; } = [5, 10, 20];
     public int[] TimeLimitSeconds { get; set; } = [10, 20, 30, 60];
     public int MaxRoomsPerChat { get; set; } = 5;
     public int RoomRequestsPerMinutePerIp { get; set; } = 20;

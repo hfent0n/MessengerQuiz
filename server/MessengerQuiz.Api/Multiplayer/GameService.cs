@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace MessengerQuiz.Api.Multiplayer;
 
-public enum CreateOutcome { Created, InvalidName, InvalidTimeLimit, TooManyRooms }
+public enum CreateOutcome { Created, InvalidName, InvalidTimeLimit, InvalidQuestionCount, TooManyRooms }
 
 public sealed record JoinResult(JoinOutcome? Outcome, Player? Player, bool InvalidName = false, bool NotFound = false);
 
@@ -53,7 +53,13 @@ public sealed class GameService : IDisposable
     }
 
     public CreateOutcome CreateRoom(
-        string chatId, ChatSession session, string? hostName, int timeLimitSeconds, out Room? room, out Player? host)
+        string chatId,
+        ChatSession session,
+        string? hostName,
+        int timeLimitSeconds,
+        int? questionCount,
+        out Room? room,
+        out Player? host)
     {
         room = null;
         host = null;
@@ -69,6 +75,12 @@ public sealed class GameService : IDisposable
             return CreateOutcome.InvalidTimeLimit;
         }
 
+        // Null means endless.
+        if (questionCount is { } count && !_options.QuestionCounts.Contains(count))
+        {
+            return CreateOutcome.InvalidQuestionCount;
+        }
+
         if (_rooms.ForChat(chatId).Count(existing => existing.Stage != RoomStage.Ended) >= _options.MaxRoomsPerChat)
         {
             return CreateOutcome.TooManyRooms;
@@ -77,7 +89,7 @@ public sealed class GameService : IDisposable
         do
         {
             room = new Room(
-                RoomStore.NewCode(), chatId, session, TimeSpan.FromSeconds(timeLimitSeconds), _options.MaxPlayers);
+                RoomStore.NewCode(), chatId, session, TimeSpan.FromSeconds(timeLimitSeconds), _options.MaxPlayers, questionCount);
         }
         while (!_rooms.TryAdd(room));
 
@@ -186,6 +198,9 @@ public sealed class GameService : IDisposable
         return null;
     });
 
+    public Task<string?> DeclareAsync(string connectionId) => ActAsync(connectionId, (room, player) =>
+        room.Declare(player) ? null : "The host can end an endless game after a question's answer is shown.");
+
     public Task<string?> AnswerAsync(string connectionId, int option) => ActAsync(connectionId, (room, player) =>
         room.Answer(player, option, Now, _options.AnswerGrace) ? null : "That answer wasn't accepted.");
 
@@ -292,7 +307,9 @@ public sealed class GameService : IDisposable
         var questions = new List<WhoSaidThisQuestion>();
         var used = new List<int>();
 
-        while (questions.Count < _options.QuestionsPerGame
+        // Endless games take every question the chat has left. The host ends them when they like.
+        var limit = room.QuestionLimit ?? int.MaxValue;
+        while (questions.Count < limit
             && MessageSelector.PickBalanced(candidates, Random.Shared) is { } pick)
         {
             var context = _selector.PrecedingContext(chat, pick.Position);

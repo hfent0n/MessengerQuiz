@@ -50,7 +50,7 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
         <h2>Multiplayer</h2>
         {playing && (
           <p className="score">
-            {view.questionNumber} / {view.questionCount}
+            {view.endless ? `Question ${view.questionNumber}` : `${view.questionNumber} / ${view.questionCount}`}
           </p>
         )}
       </header>
@@ -68,6 +68,7 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
               opened={contents.question}
               onAnswer={(option) => act('Answer', option)}
               onReady={() => act('Ready')}
+              onDeclare={() => act('Declare')}
             />
           ) : (
             <p className="note">Decrypting…</p>
@@ -176,7 +177,10 @@ function Lobby({ view, onStart }: { view: RoomView; onStart: () => void }) {
         ))}
       </ul>
 
-      <p className="note">{view.timeLimitSeconds} seconds per question.</p>
+      <p className="note">
+        {view.endless ? 'Endless, until the host declares the winner' : `${view.questionCount} questions`},{' '}
+        {view.timeLimitSeconds} seconds each.
+      </p>
 
       {view.youAreHost && (
         <button className="button primary" disabled={others < 1} onClick={onStart}>
@@ -245,9 +249,10 @@ type RoundProps = {
   opened: OpenedQuestion
   onAnswer: (option: number) => void
   onReady: () => void
+  onDeclare: () => void
 }
 
-function Round({ view, people, opened, onAnswer, onReady }: RoundProps) {
+function Round({ view, people, opened, onAnswer, onReady, onDeclare }: RoundProps) {
   const question = view.question!
   const reveal = view.reveal
   const you = view.players.find((player) => player.id === view.youId)
@@ -290,13 +295,18 @@ function Round({ view, people, opened, onAnswer, onReady }: RoundProps) {
           <p role="status">
             {revealSummary(view, people)} {reactionSummary(reveal.reactions)}
           </p>
-          {you?.ready ? (
-            <p className="note">Waiting for {names(waitingFor)}…</p>
-          ) : (
-            <button className="button primary" autoFocus onClick={onReady}>
-              {view.questionNumber === view.questionCount ? 'See the results' : 'Ready for the next one'}
-            </button>
-          )}
+          <div className="actions">
+            {you?.ready ? (
+              <p className="note">Waiting for {names(waitingFor)}…</p>
+            ) : (
+              <button className="button primary" autoFocus onClick={onReady}>
+                {view.questionNumber === view.questionCount ? 'See the results' : 'Ready for the next one'}
+              </button>
+            )}
+            {view.endless && view.youAreHost && (
+              <button className="button" onClick={onDeclare}>End game and declare the winner</button>
+            )}
+          </div>
         </div>
       )}
     </div>

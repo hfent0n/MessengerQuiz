@@ -1,5 +1,6 @@
 using MessengerQuiz.Api.Multiplayer;
 using MessengerQuiz.Api.Storage;
+using Microsoft.Extensions.Options;
 using static MessengerQuiz.Api.Endpoints.EndpointSupport;
 
 namespace MessengerQuiz.Api.Endpoints;
@@ -16,7 +17,8 @@ public static class RoomEndpoints
     }
 
     // The host's chat is identified by its ID, as for questions.
-    private static IResult CreateRoom(HttpContext context, CreateRoomRequest request, ChatStore chats, GameService games)
+    private static IResult CreateRoom(
+        HttpContext context, CreateRoomRequest request, ChatStore chats, GameService games, IOptions<QuizOptions> options)
     {
         var chatId = context.GetChatId();
         if (!chats.TryGet(chatId, out var session) || session is null)
@@ -24,10 +26,11 @@ public static class RoomEndpoints
             return Problem(StatusCodes.Status401Unauthorized, "This chat has expired. Upload it again to keep playing.");
         }
 
-        return games.CreateRoom(chatId, session, request.Name, request.TimeLimitSeconds, out var room, out var host) switch
+        return games.CreateRoom(chatId, session, request.Name, request.TimeLimitSeconds, request.Endless ? null : request.QuestionCount ?? QuestionsPerGame(options), out var room, out var host) switch
         {
             CreateOutcome.InvalidName => Problem(StatusCodes.Status400BadRequest, InvalidNameMessage),
             CreateOutcome.InvalidTimeLimit => Problem(StatusCodes.Status400BadRequest, "Choose one of the time limits."),
+            CreateOutcome.InvalidQuestionCount => Problem(StatusCodes.Status400BadRequest, "Choose one of the numbers of questions."),
             CreateOutcome.TooManyRooms => Problem(
                 StatusCodes.Status409Conflict, "This chat already has several games. Wipe it and start again."),
             _ => Results.Created($"/play/{room!.Code}", new JoinedRoomResponse(room.Code, host!.Token)),
@@ -59,7 +62,10 @@ public static class RoomEndpoints
     private const string InvalidNameMessage =
         "Names can be up to 20 letters and numbers, with single spaces between words.";
 
-    private sealed record CreateRoomRequest(string? Name, int TimeLimitSeconds);
+    private static int QuestionsPerGame(IOptions<QuizOptions> options) => options.Value.QuestionsPerGame;
+
+    // QuestionCount is optional and defaults to QuestionsPerGame. Endless ignores it.
+    private sealed record CreateRoomRequest(string? Name, int TimeLimitSeconds, int? QuestionCount = null, bool Endless = false);
 
     private sealed record JoinRoomRequest(string? Name);
 

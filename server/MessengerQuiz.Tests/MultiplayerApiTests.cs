@@ -350,6 +350,70 @@ public class MultiplayerApiTests : IAsyncLifetime
         Assert.Equal(6, guest.ReactionCount);
     }
 
+    [Theory]
+    [InlineData(5)]
+    [InlineData(20)]
+    public async Task TheHostChoosesHowManyQuestions(int questionCount)
+    {
+        var host = await CreateRoomWith(new { name = "Host", timeLimitSeconds = 20, questionCount });
+        var guest = await JoinAndConnect(host.Code, "Guest");
+        await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
+
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Start"));
+
+        var view = await guest.WaitFor(view => Stage(view) == "question");
+        Assert.Equal(questionCount, view.GetProperty("questionCount").GetInt32());
+        Assert.False(view.GetProperty("endless").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData(7)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task OnlyOfferedQuestionCountsAreAllowed(int questionCount)
+    {
+        var chatId = await UploadChat();
+
+        var response = await PostRoom(chatId, new { name = "Host", timeLimitSeconds = 20, questionCount });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task EndlessGamesUseEveryQuestionUntilTheHostDeclaresTheWinner()
+    {
+        var host = await CreateRoomWith(new { name = "Host", timeLimitSeconds = 20, endless = true });
+        var guest = await JoinAndConnect(host.Code, "Guest");
+        await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Start"));
+
+        var question = await host.WaitFor(view => Stage(view) == "question");
+        // The test chat has 40 text messages, and every one is available.
+        Assert.Equal(40, question.GetProperty("questionCount").GetInt32());
+        Assert.True(question.GetProperty("endless").GetBoolean());
+
+        // Ending is only allowed once the answer is shown.
+        Assert.NotNull(await host.Hub.InvokeAsync<string?>("Declare"));
+        _time.Advance(TimeSpan.FromSeconds(21));
+        await guest.WaitFor(view => Stage(view) == "reveal");
+
+        Assert.NotNull(await guest.Hub.InvokeAsync<string?>("Declare"));
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Declare"));
+        await guest.WaitFor(view => Stage(view) == "finished");
+    }
+
+    private async Task<TestPlayer> CreateRoomWith(object body)
+    {
+        var chatId = await UploadChat();
+        var response = await PostRoom(chatId, body);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var joined = (await response.Content.ReadFromJsonAsync<Joined>())!;
+        var host = await Connect(joined.Code, joined.PlayerToken, chatId);
+        Assert.Null(host.ConnectError);
+        return host;
+    }
+
     private static string PlayerId(TestPlayer player) => player.LastView!.Value.GetProperty("youId").GetString()!;
 
     private async Task<(TestPlayer Host, TestPlayer Guest)> StartTwoPlayerGame()
@@ -393,12 +457,12 @@ public class MultiplayerApiTests : IAsyncLifetime
         return body.GetProperty("chatId").GetString()!;
     }
 
-    private Task<HttpResponseMessage> PostRoom(string chatId, string name, int timeLimitSeconds)
+    private Task<HttpResponseMessage> PostRoom(string chatId, string name, int timeLimitSeconds) =>
+        PostRoom(chatId, new { name, timeLimitSeconds });
+
+    private Task<HttpResponseMessage> PostRoom(string chatId, object body)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/rooms")
-        {
-            Content = JsonContent.Create(new { name, timeLimitSeconds }),
-        };
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/rooms") { Content = JsonContent.Create(body) };
         request.Headers.Add("X-Chat-Id", chatId);
         return _factory.CreateClient().SendAsync(request);
     }

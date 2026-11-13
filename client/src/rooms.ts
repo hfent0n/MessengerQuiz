@@ -3,6 +3,11 @@ import type { SealedContext } from './chat/openQuestion'
 
 export const TIME_LIMITS = [10, 20, 30, 60] as const
 export const DEFAULT_TIME_LIMIT = 20
+
+// Endless keeps going until the chat runs out of questions or the host declares the winner.
+export const QUESTION_COUNTS = [5, 10, 20, 'endless'] as const
+export type QuestionCount = (typeof QUESTION_COUNTS)[number]
+export const DEFAULT_QUESTION_COUNT: QuestionCount = 10
 export const MAX_NAME_LENGTH = 20
 export const MAX_CHAT_LENGTH = 200
 
@@ -36,7 +41,10 @@ export type RoomView = {
   // Ranked by score, then by total answer time.
   players: PlayerView[]
   questionNumber: number
+  // In endless mode, how many questions the chat has left to give, at most.
   questionCount: number
+  endless: boolean
+  // What a full score bar stands for. In endless mode, the questions asked so far.
   maxScore: number
   question: {
     position: number
@@ -68,8 +76,14 @@ export function cleanChatMessage(text: string): string | null {
 
 type JoinedRoom = { code: string; playerToken: string }
 
-export async function createRoom(chatId: string, name: string, timeLimitSeconds: number): Promise<JoinedRoom> {
-  return postRoom('/api/rooms', { name, timeLimitSeconds }, { 'X-Chat-Id': chatId })
+export async function createRoom(
+  chatId: string,
+  name: string,
+  timeLimitSeconds: number,
+  questionCount: QuestionCount,
+): Promise<JoinedRoom> {
+  const length = questionCount === 'endless' ? { endless: true } : { questionCount }
+  return postRoom('/api/rooms', { name, timeLimitSeconds, ...length }, { 'X-Chat-Id': chatId })
 }
 
 export async function joinRoom(code: string, name: string): Promise<JoinedRoom> {

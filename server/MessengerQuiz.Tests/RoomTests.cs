@@ -260,6 +260,59 @@ public class RoomTests
         Assert.True(limiter.TryTake(Start + TimeSpan.FromSeconds(5)));
     }
 
+    [Fact]
+    public void TheHostDeclaresTheWinnerOfAnEndlessGameAfterAReveal()
+    {
+        var room = NewRoom(questionLimit: null);
+        var host = NewPlayer("Host", isHost: true);
+        var guest = NewPlayer("Guest");
+        room.AddPlayer(host);
+        room.AddPlayer(guest);
+        room.SetConnection(host, "host", Start);
+        room.SetConnection(guest, "guest", Start);
+        var questions = Enumerable.Range(0, 5).Select(Question).ToList();
+        room.Start(questions, questions.Select(question => question.Position), Start);
+
+        // Not while a question is open, so nobody's answer is lost.
+        Assert.False(room.Declare(host));
+        room.Answer(host, Ana, Start, Grace);
+        room.Answer(guest, Ben, Start, Grace);
+        Assert.Equal(RoomStage.Reveal, room.Stage);
+
+        Assert.False(room.Declare(guest));
+        Assert.True(room.Declare(host));
+        Assert.Equal(RoomStage.Finished, room.Stage);
+        Assert.True(host.Score > 0);
+        Assert.True(room.CanStart(host));
+    }
+
+    [Fact]
+    public void FixedLengthGamesCantBeDeclaredEarly()
+    {
+        StartGame(questionCount: 3);
+        _room.Answer(_host, Ana, Start, Grace);
+        _room.Answer(_guest, Ana, Start, Grace);
+
+        Assert.False(_room.Declare(_host));
+        Assert.Equal(RoomStage.Reveal, _room.Stage);
+    }
+
+    [Fact]
+    public void EndlessScoreBarsFillAgainstTheQuestionsSoFar()
+    {
+        var room = NewRoom(questionLimit: null);
+        var host = NewPlayer("Host", isHost: true);
+        room.AddPlayer(host);
+        room.AddPlayer(NewPlayer("Guest"));
+        var questions = Enumerable.Range(0, 40).Select(Question).ToList();
+        room.Start(questions, questions.Select(question => question.Position), Start);
+
+        var view = RoomView.For(room, host, Start);
+
+        Assert.True(view.Endless);
+        Assert.Equal(1_000, view.MaxScore);
+    }
+
     private void StartGame(int questionCount)
     {
         var questions = Enumerable.Range(0, questionCount).Select(Question).ToList();
@@ -269,10 +322,10 @@ public class RoomTests
     private static WhoSaidThisQuestion Question(int position) =>
         new(position, TestChats.Sealed($"message {position}"), 0, [], [Ana, Ben, Cal], Ana, 2);
 
-    private static Room NewRoom(int maxPlayers = 8)
+    private static Room NewRoom(int maxPlayers = 8, int? questionLimit = 10)
     {
         var chat = TestChats.Chat(2, TestChats.Message());
-        return new Room("code", "chat", new ChatSession(chat, chat.Messages), Limit, maxPlayers);
+        return new Room("code", "chat", new ChatSession(chat, chat.Messages), Limit, maxPlayers, questionLimit);
     }
 
     private static Player NewPlayer(string name, bool isHost = false) =>
