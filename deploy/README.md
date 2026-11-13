@@ -25,17 +25,19 @@ What keeps costs low and bounded:
 
 ### 1. Install and sign in
 
+Every command in this guide is a single line, so paste each one whole.
+
 Install the [Google Cloud CLI](https://cloud.google.com/sdk/docs/install), then sign in:
 
 ```bash
 gcloud auth login
 ```
 
-Set your project and a region. Run these in each new terminal before the other commands, because they set the variables the commands use. `europe-west1` (Belgium) has some of the lowest prices in Europe. Run `gcloud run regions list` to see the others.
+Set your project and a region. Run these in each new terminal before the other commands, because they set the variables the commands use. The live site uses `europe-west2` (London). Run `gcloud run regions list` to see the others. If you use a different project or region, change the values at the top of [`deploy.yml`](../.github/workflows/deploy.yml) to match.
 
 ```bash
 export PROJECT_ID=your-project-id
-export REGION=europe-west1
+export REGION=europe-west2
 gcloud config set project $PROJECT_ID
 gcloud config set run/region $REGION
 ```
@@ -45,9 +47,7 @@ Your project needs a billing account linked to it, even to use the free allowanc
 ### 2. Turn on the services it uses
 
 ```bash
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
-  cloudfunctions.googleapis.com eventarc.googleapis.com pubsub.googleapis.com \
-  cloudbilling.googleapis.com billingbudgets.googleapis.com
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com cloudfunctions.googleapis.com eventarc.googleapis.com pubsub.googleapis.com cloudbilling.googleapis.com billingbudgets.googleapis.com
 ```
 
 ### 3. Create an identity for the app
@@ -63,16 +63,7 @@ gcloud iam service-accounts create messenger-quiz-run --display-name "Messenger 
 Run this from the repository's root folder:
 
 ```bash
-gcloud run deploy messenger-quiz \
-  --source . \
-  --service-account messenger-quiz-run@$PROJECT_ID.iam.gserviceaccount.com \
-  --allow-unauthenticated \
-  --max-instances 1 \
-  --min-instances 0 \
-  --cpu 1 \
-  --memory 512Mi \
-  --timeout 3600 \
-  --set-env-vars Quiz__DemoOnly=true,Quiz__TrustForwardedHeaders=true
+gcloud run deploy messenger-quiz --source . --service-account messenger-quiz-run@$PROJECT_ID.iam.gserviceaccount.com --allow-unauthenticated --max-instances 1 --min-instances 0 --cpu 1 --memory 512Mi --timeout 3600 --set-env-vars Quiz__DemoOnly=true,Quiz__TrustForwardedHeaders=true
 ```
 
 What this does:
@@ -93,11 +84,10 @@ curl https://YOUR-SERVICE-URL/api/health
 Each deploy stores a new image. This keeps only the latest 3, so storage stays within the free allowance:
 
 ```bash
-gcloud artifacts repositories set-cleanup-policies cloud-run-source-deploy \
-  --location $REGION --policy deploy/cleanup-policy.json
+gcloud artifacts repositories set-cleanup-policies cloud-run-source-deploy --location $REGION --policy deploy/cleanup-policy.json
 ```
 
-To deploy a new version later, run the `gcloud run deploy` command again.
+Once step 6 is set up, GitHub deploys every change to `main` for you. Until then, run the `gcloud run deploy` command again to deploy a new version.
 
 ### 5. Set up the billing cap
 
@@ -110,9 +100,7 @@ The function needs its own identity, allowed only to link and unlink this projec
 
 ```bash
 gcloud iam service-accounts create billing-cap --display-name "Billing cap"
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member serviceAccount:billing-cap@$PROJECT_ID.iam.gserviceaccount.com \
-  --role roles/billing.projectManager
+gcloud projects add-iam-policy-binding $PROJECT_ID --member serviceAccount:billing-cap@$PROJECT_ID.iam.gserviceaccount.com --role roles/billing.projectManager
 ```
 
 Create the topic and deploy the function to listen to it:
@@ -120,22 +108,9 @@ Create the topic and deploy the function to listen to it:
 ```bash
 gcloud pubsub topics create billing-cap
 
-gcloud functions deploy billing-cap \
-  --gen2 \
-  --region $REGION \
-  --runtime nodejs22 \
-  --source deploy/billing-cap \
-  --entry-point stopBilling \
-  --trigger-topic billing-cap \
-  --service-account billing-cap@$PROJECT_ID.iam.gserviceaccount.com \
-  --trigger-service-account billing-cap@$PROJECT_ID.iam.gserviceaccount.com \
-  --set-env-vars PROJECT_ID=$PROJECT_ID \
-  --max-instances 1 \
-  --memory 256Mi \
-  --no-allow-unauthenticated
+gcloud functions deploy billing-cap --gen2 --region $REGION --runtime nodejs22 --source deploy/billing-cap --entry-point stopBilling --trigger-topic billing-cap --service-account billing-cap@$PROJECT_ID.iam.gserviceaccount.com --trigger-service-account billing-cap@$PROJECT_ID.iam.gserviceaccount.com --set-env-vars PROJECT_ID=$PROJECT_ID --max-instances 1 --memory 256Mi --no-allow-unauthenticated
 
-gcloud functions add-invoker-policy-binding billing-cap --region $REGION \
-  --member serviceAccount:billing-cap@$PROJECT_ID.iam.gserviceaccount.com
+gcloud functions add-invoker-policy-binding billing-cap --region $REGION --member serviceAccount:billing-cap@$PROJECT_ID.iam.gserviceaccount.com
 ```
 
 The last command lets Pub/Sub, using the function's identity, run the function. Nobody else can.
@@ -143,18 +118,9 @@ The last command lets Pub/Sub, using the function's identity, run the function. 
 Create the budget. The amount's currency must match your billing account's, such as `5GBP` or `5USD`. It also sends emails at 50%, 90% and 100%:
 
 ```bash
-export BILLING_ACCOUNT=$(gcloud billing projects describe $PROJECT_ID \
-  --format 'value(billingAccountName)' | sed 's|billingAccounts/||')
+export BILLING_ACCOUNT=$(gcloud billing projects describe $PROJECT_ID --format 'value(billingAccountName)' | sed 's|billingAccounts/||')
 
-gcloud billing budgets create \
-  --billing-account $BILLING_ACCOUNT \
-  --display-name "Messenger Quiz cap" \
-  --budget-amount 5GBP \
-  --filter-projects projects/$PROJECT_ID \
-  --threshold-rule percent=0.5 \
-  --threshold-rule percent=0.9 \
-  --threshold-rule percent=1.0 \
-  --notifications-rule-pubsub-topic projects/$PROJECT_ID/topics/billing-cap
+gcloud billing budgets create --billing-account $BILLING_ACCOUNT --display-name "Messenger Quiz cap" --budget-amount 5GBP --filter-projects projects/$PROJECT_ID --threshold-rule percent=0.5 --threshold-rule percent=0.9 --threshold-rule percent=1.0 --notifications-rule-pubsub-topic projects/$PROJECT_ID/topics/billing-cap
 ```
 
 Check the function receives alerts by sending a pretend one that's under budget. It's harmless:
@@ -177,12 +143,68 @@ Things to know about the cap:
 
 - **Keep this project for Messenger Quiz only.** If billing stays off for a long time, Google can delete the project's resources. The app keeps nothing, so you'd only need to deploy it again.
 
-## Changing settings
+### 6. Set up automatic deploys
 
-Any setting in [`QuizOptions`](../server/MessengerQuiz.Api/QuizOptions.cs) can be changed with an environment variable named `Quiz__` followed by the setting's name. For example, `Quiz__QuestionsPerGame=5`. Change one without a new build like this:
+Two GitHub Actions workflows build, test and deploy the app:
+
+- **[`ci.yml`](../.github/workflows/ci.yml)** runs on every pull request and every push to `main`. It runs the server tests, the client's lint, tests and build, the billing cap's tests, and a Docker build.
+- **[`deploy.yml`](../.github/workflows/deploy.yml)** runs after CI passes on `main`. It does these steps:
+  1. Builds the image and pushes it to Artifact Registry, tagged with the commit.
+  2. Deploys it to Cloud Run with the same settings as step 4.
+  3. Waits until `/api/health` reports the new commit. It can also be run by hand from the repository's **Actions** tab.
+
+GitHub signs in to Google with **Workload Identity Federation**, so there's no key to store or leak:
+
+1. Each run asks GitHub for a short-lived token that says which repository and branch it's running from.
+2. Google checks that token against the rules below and gives back a Google token that lasts about an hour.
+3. The run uses that token to act as a deploy-only service account.
+
+Turn on the two services that do the token exchange:
 
 ```bash
-gcloud run services update messenger-quiz --update-env-vars Quiz__QuestionsPerGame=5
+gcloud services enable iamcredentials.googleapis.com sts.googleapis.com
 ```
+
+Create the deploy account, and let it do only three things:
+
+- deploy new versions of Cloud Run services
+- run them as the app's own account
+- push images to the one image repository
+
+```bash
+gcloud iam service-accounts create github-deployer --display-name "GitHub Actions deployer"
+
+gcloud projects add-iam-policy-binding $PROJECT_ID --member serviceAccount:github-deployer@$PROJECT_ID.iam.gserviceaccount.com --role roles/run.developer
+
+gcloud iam service-accounts add-iam-policy-binding messenger-quiz-run@$PROJECT_ID.iam.gserviceaccount.com --member serviceAccount:github-deployer@$PROJECT_ID.iam.gserviceaccount.com --role roles/iam.serviceAccountUser
+
+gcloud artifacts repositories add-iam-policy-binding cloud-run-source-deploy --location $REGION --member serviceAccount:github-deployer@$PROJECT_ID.iam.gserviceaccount.com --role roles/artifactregistry.writer
+```
+
+Create a pool for GitHub's tokens and a provider that only accepts tokens from this repository's `main` branch. `1443354851` is the repository's ID on GitHub. The provider checks the ID rather than the name, because a name can be reused if the repository is renamed or deleted.
+
+```bash
+gcloud iam workload-identity-pools create github --location global --display-name "GitHub Actions"
+
+gcloud iam workload-identity-pools providers create-oidc github --location global --workload-identity-pool github --display-name "GitHub" --issuer-uri https://token.actions.githubusercontent.com --attribute-mapping "google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.ref=assertion.ref" --attribute-condition "assertion.repository_id == '1443354851' && assertion.ref == 'refs/heads/main'"
+```
+
+Let runs from this repository act as the deploy account:
+
+```bash
+export PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format 'value(projectNumber)')
+
+gcloud iam service-accounts add-iam-policy-binding github-deployer@$PROJECT_ID.iam.gserviceaccount.com --role roles/iam.workloadIdentityUser --member "principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository_id/1443354851"
+```
+
+New permissions can take a few minutes to apply. After that, push to `main` and watch the **Actions** tab: CI runs first, then Deploy.
+
+Optionally, stop changes reaching `main` without passing CI. On GitHub, open the repository's **Settings**, then **Rules**, then **Rulesets**. Add a rule for `main` that requires a pull request and the four CI checks to pass.
+
+## Changing settings
+
+Any setting in [`QuizOptions`](../server/MessengerQuiz.Api/QuizOptions.cs) can be changed with an environment variable named `Quiz__` followed by the setting's name. For example, `Quiz__QuestionsPerGame=5`.
+
+Add it to `--set-env-vars` in [`deploy.yml`](../.github/workflows/deploy.yml). Each deploy replaces the service's environment variables with that list, so a setting changed only in the console or with `gcloud run services update` is lost at the next deploy.
 
 Don't turn `Quiz__DemoOnly` off on the hosted site. The site would then accept and hold people's real chats, and the privacy promises in the main README only hold when it runs on your own computer.

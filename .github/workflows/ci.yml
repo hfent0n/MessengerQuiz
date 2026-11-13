@@ -1,0 +1,69 @@
+# Checks every pull request and every push to main. A push to main that passes is then deployed by deploy.yml.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same branch or pull request replaces a run still in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only: CI never changes the repository.
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet test MessengerQuiz.sln
+
+  client:
+    name: Client lint, tests and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  billing-cap:
+    name: Billing cap tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/billing-cap
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: deploy/billing-cap/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Builds the image to check it still builds. Only deploy.yml publishes it.
+      - run: docker build --tag messenger-quiz:ci .

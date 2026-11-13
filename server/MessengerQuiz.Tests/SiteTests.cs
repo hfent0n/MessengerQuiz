@@ -9,11 +9,21 @@ namespace MessengerQuiz.Tests;
 public class SiteTests(WebApplicationFactory<Program> factory) : IClassFixture<WebApplicationFactory<Program>>
 {
     [Fact]
-    public async Task HealthCheckIsOk()
+    public async Task HealthCheckReportsTheVersion()
     {
-        var response = await factory.CreateClient().GetAsync("/api/health");
+        var client = WithSettings(("APP_VERSION", "abc123")).CreateClient();
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var health = await client.GetFromJsonAsync<Health>("/api/health");
+
+        Assert.Equal(new Health("ok", "abc123"), health);
+    }
+
+    [Fact]
+    public async Task HealthCheckWithoutAVersionSaysDev()
+    {
+        var health = await factory.CreateClient().GetFromJsonAsync<Health>("/api/health");
+
+        Assert.Equal("dev", health!.Version);
     }
 
     [Fact]
@@ -105,4 +115,6 @@ public class SiteTests(WebApplicationFactory<Program> factory) : IClassFixture<W
     }
 
     private sealed record Config(bool DemoOnly);
+
+    private sealed record Health(string Status, string Version);
 }

@@ -110,6 +110,8 @@ When running locally, other people can only open the link if they're on your net
 
 Messenger Quiz can be hosted on Google Cloud Run as a demo-only site, within Cloud Run's free allowance and with a billing cap. [deploy/README.md](deploy/README.md) explains how, step by step.
 
+GitHub Actions tests every pull request. Once CI passes on `main`, it deploys the new version to Cloud Run and checks it's live. It signs in to Google with Workload Identity Federation, so no key is stored.
+
 ## Project layout
 
 | Path | What's there |
@@ -120,6 +122,7 @@ Messenger Quiz can be hosted on Google Cloud Run as a demo-only site, within Clo
 | `server/MessengerQuiz.Api/Multiplayer` | Multiplayer rooms, rules, scoring and the SignalR hub |
 | `client` | React, TypeScript and Vite front end. Reads the zips and plays the quiz |
 | `Dockerfile` | Builds the client and server into one container for hosting |
+| `.github/workflows` | CI for pull requests, and deploys to Cloud Run from `main` |
 | `deploy` | Hosting guide, and the function that caps Google Cloud spending |
 | `plan.md` | Design notes, API details, decisions and future work |
 

@@ -308,6 +308,8 @@ The chat ID is kept in `sessionStorage`, so it survives a refresh but is cleared
 | The hosted site is demo-only | The privacy promises rely on the server running on the player's own computer. A public server would otherwise hold strangers' private messages |
 | Google Cloud Run rather than AWS | It scales to zero, supports WebSockets and has a lasting free allowance. On AWS, every way to run this either costs money after the free plan's credits run out or means managing a server |
 | A function that turns billing off, not just a budget | Google Cloud budgets only send alerts, so a function makes the budget a hard cap |
+| GitHub Actions with Workload Identity Federation | The code is already on GitHub, Actions is free for public repositories, and no long-lived Google key exists to leak |
+| Deploy after CI, from `workflow_run` | A broken commit is never deployed, and CI's checks aren't repeated in the deploy |
 | One container serving client and API | One service to deploy, and no cross-origin requests between the client and the API |
 
 ## Multiplayer
@@ -387,7 +389,7 @@ Each player has a score bar that fills towards the most points possible in the g
 
 ## Hosting
 
-Built, apart from CI/CD. Step-by-step setup is in [`deploy/README.md`](deploy/README.md).
+Built, including CI/CD. Step-by-step setup is in [`deploy/README.md`](deploy/README.md).
 
 - **Container:** a multi-stage [Dockerfile](Dockerfile) builds the client with Node, publishes the server with the .NET SDK, and runs both from Microsoft's chiseled ASP.NET image. That image has no shell or package manager and runs as a non-root user. The `-extra` variant includes ICU, which player-name normalisation needs.
 - **Serving the client:** the server serves `wwwroot` with static files and falls back to `index.html` for any other path outside `/api`. Hashed files under `/assets` are cached for a year. Everything else, including `index.html`, is sent with `no-cache`, so a redeploy never leaves a page asking for deleted scripts.
@@ -398,7 +400,10 @@ Built, apart from CI/CD. Step-by-step setup is in [`deploy/README.md`](deploy/RE
 - **What gets uploaded:** `.gcloudignore` and `.dockerignore` leave out export folders and zips, packages, build output and tests.
 - **Billing cap:** a budget publishes alerts to Pub/Sub. A Node function in [`deploy/billing-cap`](deploy/billing-cap) unlinks the project from billing once the cost reaches the budget. Its service account only has Project Billing Manager. Billing data lags by hours, so spending can overshoot slightly.
 - **Image storage:** a cleanup policy keeps the 3 latest images, to stay within the free allowance.
-- **Tests:** server tests for the health check, demo-only mode, unknown API paths, game links and cache headers, and per-visitor rate limits with faked addresses. The billing function's alert handling has `node --test` tests.
+- **CI:** [`ci.yml`](.github/workflows/ci.yml) runs on pull requests and pushes to `main`, as four parallel jobs: server tests, client lint, tests and build, the billing cap's tests, and a Docker build.
+- **CD:** [`deploy.yml`](.github/workflows/deploy.yml) runs when CI passes on a push to `main`, or by hand. It deploys the commit CI checked, not whatever `main` points to by then. It builds the image, pushes it to Artifact Registry tagged with the commit, deploys it with the settings kept in the workflow, and waits until `/api/health` reports that commit as `version`, from `APP_VERSION`. Deploys run one at a time and are never cancelled halfway.
+- **Signing in from GitHub:** Workload Identity Federation swaps GitHub's OIDC token for a short-lived Google token, so no key is stored. The provider only accepts this repository's numeric ID on `refs/heads/main`. The ID can't be reused the way a renamed repository's name can. The `github-deployer` account can only deploy Cloud Run revisions, run them as `messenger-quiz-run`, and push to the image repository.
+- **Tests:** server tests for the health check and its version, demo-only mode, unknown API paths, game links and cache headers, and per-visitor rate limits with faked addresses. The billing function's alert handling has `node --test` tests.
 
 ## Future work
 
@@ -437,7 +442,6 @@ Each is a new `IQuestionGenerator`, scoped to the uploaded chat.
 
 ### Hosting
 
-- **CI/CD with GitHub Actions.** On pull requests, run the server tests, client lint, tests and build, the billing function's tests, and a Docker build. On pushes to `main`, push the image to Artifact Registry tagged with the commit, deploy it to Cloud Run, and check `/api/health`. Sign in to Google with Workload Identity Federation instead of a stored key, limited to this repository's `main` branch.
 - Optionally, define the Google Cloud setup in Terraform, so the environment can be rebuilt from the repository.
 - Measuring real process memory under load. The server reached about 1 GB after parsing 64 chats back to back, but the 1 GB cap only counts estimated chat size, so it doesn't bound the whole process. On the demo-only site, chats are only the small demo, so 512 MB is plenty.
 - Scaling past one instance, using sticky sessions or a shared in-memory store. A shared store must not write chats to disk.

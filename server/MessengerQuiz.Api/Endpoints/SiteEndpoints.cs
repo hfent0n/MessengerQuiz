@@ -15,8 +15,9 @@ public static class SiteEndpoints
 
     public static void MapSiteEndpoints(this IEndpointRouteBuilder app)
     {
-        // Used by the deploy pipeline to check a new version is up.
-        app.MapGet("/api/health", () => Results.Ok(new { status = "ok" }));
+        // Used by the deploy pipeline to check the new version is up. APP_VERSION is the commit it was built from.
+        app.MapGet("/api/health", (IConfiguration config) =>
+            Results.Ok(new { status = "ok", version = config["APP_VERSION"] ?? "dev" }));
 
         app.MapGet("/api/config", (IOptions<QuizOptions> options) =>
             Results.Ok(new ClientConfig(options.Value.DemoOnly)));

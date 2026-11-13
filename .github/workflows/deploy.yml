@@ -1,0 +1,100 @@
+# Deploys main to Cloud Run once CI has passed on it. deploy/README.md explains the one-time Google Cloud setup.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Lets a deploy be rerun by hand from the Actions tab.
+  workflow_dispatch:
+
+# One deploy at a time, in order. A deploy is never cancelled halfway.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+# None of these are secrets. Access is controlled by Workload Identity Federation, which only accepts this
+# repository's main branch.
+env:
+  PROJECT_ID: messengerquiz
+  REGION: europe-west2
+  SERVICE: messenger-quiz
+  IMAGE: europe-west2-docker.pkg.dev/messengerquiz/cloud-run-source-deploy/messenger-quiz
+  RUNTIME_SERVICE_ACCOUNT: messenger-quiz-run@messengerquiz.iam.gserviceaccount.com
+  DEPLOY_SERVICE_ACCOUNT: github-deployer@messengerquiz.iam.gserviceaccount.com
+  WORKLOAD_IDENTITY_PROVIDER: projects/738161318490/locations/global/workloadIdentityPools/github/providers/github
+
+permissions:
+  contents: read
+  # Lets the job ask GitHub for a token that proves which repository and branch it's running from.
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy to Cloud Run
+    # Only after CI passed on a push to main, not on a pull request from a branch named main.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The commit CI checked, not whatever main points to now.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Choose the version
+        run: echo "VERSION=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      # Swaps GitHub's token for a short-lived Google one. No key is stored anywhere.
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Build and push the image
+        run: |
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build --tag "$IMAGE:$VERSION" .
+          docker push "$IMAGE:$VERSION"
+
+      - name: Deploy
+        id: deploy
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --image "$IMAGE:$VERSION" \
+            --service-account "$RUNTIME_SERVICE_ACCOUNT" \
+            --max-instances 1 \
+            --min-instances 0 \
+            --cpu 1 \
+            --memory 512Mi \
+            --timeout 3600 \
+            --set-env-vars "Quiz__DemoOnly=true,Quiz__TrustForwardedHeaders=true,APP_VERSION=$VERSION" \
+            --quiet
+          echo "url=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
+            --format 'value(status.url)')" >> "$GITHUB_OUTPUT"
+
+      # The deploy only counts once the site reports the new commit.
+      - name: Check the new version is live
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          for attempt in $(seq 1 10); do
+            version=$(curl --silent --fail "$URL/api/health" | jq -r .version || true)
+            if [ "$version" = "$VERSION" ]; then
+              echo "Live: $URL is running $VERSION."
+              exit 0
+            fi
+            echo "Attempt $attempt: running '${version:-nothing}', waiting for $VERSION."
+            sleep 6
+          done
+          echo "::error::$URL didn't start running $VERSION."
+          exit 1
