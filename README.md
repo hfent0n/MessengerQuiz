@@ -19,7 +19,7 @@ How your chat is handled:
 - **Messages are held in memory only.** They're never saved to disk or a database, and never written to logs. A chat is deleted after 2 hours without use, when you press **Wipe my chat and exit**, or when the server stops.
 - **Each chat is private to the browser tab that uploaded it.** The server only answers requests that include that chat's secret ID.
 
-Messenger Quiz isn't hosted anywhere yet. **Further security measures will be added before it goes live**, and this section will be updated when they are.
+**The hosted version only plays the demo chat.** Real chats can't be uploaded to it, so it never holds anyone's messages. Everything above applies when you run Messenger Quiz on your own computer, which is the only way to play your own chats.
 
 ## Requirements
 
@@ -106,6 +106,10 @@ Photos and videos can't be shown again after you refresh the page, because brows
 
 When running locally, other people can only open the link if they're on your network. Start the client with `npm run dev --prefix client -- --host`, which prints a network address, and share the link using that address instead of `localhost`.
 
+## Hosting
+
+Messenger Quiz can be hosted on Google Cloud Run as a demo-only site, within Cloud Run's free allowance and with a billing cap. [deploy/README.md](deploy/README.md) explains how, step by step.
+
 ## Project layout
 
 | Path | What's there |
@@ -115,6 +119,8 @@ When running locally, other people can only open the link if they're on your net
 | `server/MessengerQuiz.Tests` | Server tests. Uses hand-written fake chats, never real messages |
 | `server/MessengerQuiz.Api/Multiplayer` | Multiplayer rooms, rules, scoring and the SignalR hub |
 | `client` | React, TypeScript and Vite front end. Reads the zips and plays the quiz |
+| `Dockerfile` | Builds the client and server into one container for hosting |
+| `deploy` | Hosting guide, and the function that caps Google Cloud spending |
 | `plan.md` | Design notes, API details, decisions and future work |
 
 Don't commit your Facebook download to the repository. The usual export folder and zip names are in `.gitignore`.

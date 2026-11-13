@@ -1,0 +1,30 @@
+# What `gcloud run deploy --source .` leaves out when it uploads this folder to Google Cloud Build.
+
+# Private message exports: never upload these
+your_activity_across_facebook/
+your_facebook_activity/
+facebook-*/
+facebook-*.zip
+messages/
+
+# Build output and packages, which the image builds itself
+bin/
+obj/
+node_modules/
+dist/
+TestResults/
+
+# Not needed for the build
+.git/
+.gitignore
+.claude/
+.idea/
+.vs/
+.vscode/
+.DS_Store
+*.user
+.env
+.env.*
+deploy/
+.github/
+server/MessengerQuiz.Tests/

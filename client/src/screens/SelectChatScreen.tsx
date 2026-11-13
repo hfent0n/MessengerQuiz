@@ -1,6 +1,6 @@
-import { useState, type ChangeEvent, type InputHTMLAttributes } from 'react'
+import { useEffect, useState, type ChangeEvent, type InputHTMLAttributes } from 'react'
 import type { ActiveChat } from '../activeChat'
-import { startDemo, uploadChat } from '../api'
+import { getConfig, startDemo, uploadChat } from '../api'
 import { chatFromFolder, chatLabel, groupChats, mediaKind, type ChatSource, type ExportFile } from '../chatFiles'
 import { demoMedia } from '../demoChat'
 
@@ -17,10 +17,25 @@ type Step =
 
 const folderPickerProps = { webkitdirectory: '' } as InputHTMLAttributes<HTMLInputElement>
 
+const REPO_URL = 'https://github.com/hfent0n/MessengerQuiz'
+
 export default function SelectChatScreen({ onUploaded }: Props) {
   const [step, setStep] = useState<Step>({ kind: 'pick' })
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
+  // Null until the server says. Upload options stay hidden until then, so the public site never shows them.
+  const [demoOnly, setDemoOnly] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let current = true
+    getConfig()
+      .then((config) => current && setDemoOnly(config.demoOnly))
+      // If the settings can't be read, show uploads. The server still refuses them on a demo-only site.
+      .catch(() => current && setDemoOnly(false))
+    return () => {
+      current = false
+    }
+  }, [])
 
   async function handleZips(event: ChangeEvent<HTMLInputElement>) {
     const zips = [...(event.target.files ?? [])]
@@ -122,6 +137,33 @@ export default function SelectChatScreen({ onUploaded }: Props) {
   }
 
   const busy = step.kind !== 'pick'
+  const demoButton = (
+    <button
+      type="button"
+      className={['button', demoOnly ? 'primary' : '', step.kind === 'demo' ? 'busy' : ''].filter(Boolean).join(' ')}
+      disabled={busy}
+      onClick={playDemo}
+    >
+      {step.kind === 'demo' ? 'Starting demo…' : 'Try a demo chat'}
+    </button>
+  )
+
+  if (demoOnly !== false) {
+    return (
+      <section>
+        <p>Find out who really knows your group chat.</p>
+        <div className="actions">{demoButton}</div>
+        <p className="note">The demo is a made-up group chat between four flatmates, playable alone or with friends.</p>
+        {error && <p role="alert" className="error">{error}</p>}
+        {demoOnly && (
+          <p className="note">
+            To keep real messages private, this site only plays the demo. To play your own Facebook chats,{' '}
+            <a href={REPO_URL}>run Messenger Quiz on your own computer</a>, where your messages never leave it.
+          </p>
+        )}
+      </section>
+    )
+  }
 
   return (
     <section>
@@ -138,14 +180,7 @@ export default function SelectChatScreen({ onUploaded }: Props) {
             onChange={handleZips}
           />
         </label>
-        <button
-          type="button"
-          className={step.kind === 'demo' ? 'button busy' : 'button'}
-          disabled={busy}
-          onClick={playDemo}
-        >
-          {step.kind === 'demo' ? 'Starting demo…' : 'Try a demo chat'}
-        </button>
+        {demoButton}
       </div>
       <p className="note">No Facebook download? The demo is a made-up group chat between four flatmates.</p>
       {error && <p role="alert" className="error">{error}</p>}

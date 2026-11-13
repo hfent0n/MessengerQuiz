@@ -9,12 +9,19 @@ using MessengerQuiz.Api.Parsing;
 using MessengerQuiz.Api.Questions;
 using MessengerQuiz.Api.Selection;
 using MessengerQuiz.Api.Storage;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Hosts such as Cloud Run choose the port and pass it in PORT.
+if (builder.Configuration["PORT"] is { Length: > 0 } port)
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
 
 builder.Services.Configure<QuizOptions>(builder.Configuration.GetSection(QuizOptions.SectionName));
 
@@ -63,11 +70,29 @@ builder.Services.AddSingleton(services =>
 
 var app = builder.Build();
 
+if (app.Services.GetRequiredService<IOptions<QuizOptions>>().Value.TrustForwardedHeaders)
+{
+    var forwarded = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+        // Only the last address, which the host's proxy adds. Earlier ones come from the visitor and can be faked.
+        ForwardLimit = 1,
+    };
+    // The host's proxy addresses aren't fixed, so any proxy is trusted. That's only safe because the app can only
+    // be reached through it.
+    forwarded.KnownIPNetworks.Clear();
+    forwarded.KnownProxies.Clear();
+    app.UseForwardedHeaders(forwarded);
+}
+
+app.UseStaticFiles(SiteEndpoints.ClientFiles);
+
 app.UseRateLimiter();
 
 app.MapChatEndpoints();
 app.MapQuestionEndpoints();
 app.MapRoomEndpoints();
+app.MapSiteEndpoints();
 
 app.Run();
 

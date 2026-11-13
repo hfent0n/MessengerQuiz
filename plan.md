@@ -6,7 +6,7 @@ A web game where a player uploads one Facebook Messenger chat and is quizzed on 
 - **Frontend:** React, TypeScript and Vite
 - **Storage:** none. Chats stay in memory and are never written to disk.
 
-"Who said this?" from a single uploaded chat is built, in single player and [multiplayer](#multiplayer). Everything else is under [Future work](#future-work).
+"Who said this?" from a single uploaded chat is built, in single player and [multiplayer](#multiplayer). The app can be [hosted on Google Cloud Run](#hosting) as a demo-only site. Everything else is under [Future work](#future-work).
 
 ## Running it
 
@@ -110,6 +110,10 @@ An unzipped chat folder can still be chosen instead. If it has no message pages 
 | `POST` | `/api/rooms/{code}/players` | Join a game in its lobby |
 | WebSocket | `/api/rooms/hub` | Play a game live, through SignalR |
 | `DELETE` | `/api/chats/current` | Wipe the chat from memory |
+| `GET` | `/api/config` | The client's settings: `{ demoOnly }` |
+| `GET` | `/api/health` | Check the server is up, for deploys |
+
+Any other path outside `/api` returns the built client's `index.html`, so game links load the app when it's hosted.
 
 The `GET` and `DELETE` routes identify the chat with an `X-Chat-Id` header. The ID acts as a password, so it stays out of URLs, where it would reach browser history and request logs.
 
@@ -301,6 +305,10 @@ The chat ID is kept in `sessionStorage`, so it survives a refresh but is cleared
 | Ready step after each reveal, with disconnected players skipped | Players get time to react to the message, and a player who leaves can't stall the game |
 | A built-in demo chat | Recruiters and other visitors can try the game without requesting a Facebook download |
 | No pseudonyms or encryption yet | Readable names and text make debugging much easier while the game is built. See [Privacy](#privacy) under future work |
+| The hosted site is demo-only | The privacy promises rely on the server running on the player's own computer. A public server would otherwise hold strangers' private messages |
+| Google Cloud Run rather than AWS | It scales to zero, supports WebSockets and has a lasting free allowance. On AWS, every way to run this either costs money after the free plan's credits run out or means managing a server |
+| A function that turns billing off, not just a budget | Google Cloud budgets only send alerts, so a function makes the budget a hard cap |
+| One container serving client and API | One service to deploy, and no cross-origin requests between the client and the API |
 
 ## Multiplayer
 
@@ -377,6 +385,21 @@ Each player has a score bar that fills towards the most points possible in the g
 - WebSockets must pass through any reverse proxy, with a fallback to long polling, which SignalR handles.
 - Rooms live in one server instance's memory, like chats. Scaling past one instance would need sticky sessions or a SignalR backplane.
 
+## Hosting
+
+Built, apart from CI/CD. Step-by-step setup is in [`deploy/README.md`](deploy/README.md).
+
+- **Container:** a multi-stage [Dockerfile](Dockerfile) builds the client with Node, publishes the server with the .NET SDK, and runs both from Microsoft's chiseled ASP.NET image. That image has no shell or package manager and runs as a non-root user. The `-extra` variant includes ICU, which player-name normalisation needs.
+- **Serving the client:** the server serves `wwwroot` with static files and falls back to `index.html` for any other path outside `/api`. Hashed files under `/assets` are cached for a year. Everything else, including `index.html`, is sent with `no-cache`, so a redeploy never leaves a page asking for deleted scripts.
+- **Demo-only:** `Quiz:DemoOnly` makes `POST /api/chats` return `403`, and `/api/config` tells the client to show only the demo, with a link to run it locally. The image turns it on by default.
+- **Port:** the server listens on `PORT` when the host sets it.
+- **Visitor addresses:** `Quiz:TrustForwardedHeaders` reads the last `X-Forwarded-For` address, the one Cloud Run's proxy adds, so rate limits apply per visitor. Earlier addresses can be faked, so they're ignored. It must stay off when the server can be reached directly.
+- **Cloud Run settings:** at most 1 instance, scaling to 0, 1 CPU, 512 MB and a 60-minute request timeout for multiplayer WebSockets. The app runs as a service account with no permissions.
+- **What gets uploaded:** `.gcloudignore` and `.dockerignore` leave out export folders and zips, packages, build output and tests.
+- **Billing cap:** a budget publishes alerts to Pub/Sub. A Node function in [`deploy/billing-cap`](deploy/billing-cap) unlinks the project from billing once the cost reaches the budget. Its service account only has Project Billing Manager. Billing data lags by hours, so spending can overshoot slightly.
+- **Image storage:** a cleanup policy keeps the 3 latest images, to stay within the free allowance.
+- **Tests:** server tests for the health check, demo-only mode, unknown API paths, game links and cache headers, and per-visitor rate limits with faked addresses. The billing function's alert handling has `node --test` tests.
+
 ## Future work
 
 ### Question types
@@ -414,11 +437,9 @@ Each is a new `IQuestionGenerator`, scoped to the uploaded chat.
 
 ### Hosting
 
-- HTTPS, so chats and chat IDs are encrypted in transit.
-- Serving the built client from the API, or a reverse proxy, since `/api` is only proxied in development.
-- Measuring real process memory under load. The server reached about 1 GB after parsing 64 chats back to back, but the 1 GB cap only counts estimated chat size, so it doesn't bound the whole process.
-- Correct client IP handling behind a proxy, or the per-IP limit would treat all users as one.
-- A privacy note explaining what is uploaded and when it's deleted.
+- **CI/CD with GitHub Actions.** On pull requests, run the server tests, client lint, tests and build, the billing function's tests, and a Docker build. On pushes to `main`, push the image to Artifact Registry tagged with the commit, deploy it to Cloud Run, and check `/api/health`. Sign in to Google with Workload Identity Federation instead of a stored key, limited to this repository's `main` branch.
+- Optionally, define the Google Cloud setup in Terraform, so the environment can be rebuilt from the repository.
+- Measuring real process memory under load. The server reached about 1 GB after parsing 64 chats back to back, but the 1 GB cap only counts estimated chat size, so it doesn't bound the whole process. On the demo-only site, chats are only the small demo, so 512 MB is plenty.
 - Scaling past one instance, using sticky sessions or a shared in-memory store. A shared store must not write chats to disk.
 
 ### Privacy

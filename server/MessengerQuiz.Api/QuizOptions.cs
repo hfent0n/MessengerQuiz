@@ -4,6 +4,14 @@ public sealed class QuizOptions
 {
     public const string SectionName = "Quiz";
 
+    // On the public site only the demo chat can be played, so real chats are never uploaded to a hosted server.
+    public bool DemoOnly { get; set; }
+
+    // Behind a proxy such as Cloud Run's, every request seems to come from the proxy. This reads the visitor's
+    // address from the X-Forwarded-For header instead, so rate limits apply per visitor. Only turn it on behind
+    // a proxy that sets that header, or visitors could claim any address.
+    public bool TrustForwardedHeaders { get; set; }
+
     public long MaxUploadBytes { get; set; } = 50 * 1024 * 1024;
 
     // Pages arrive gzipped, so this limits their combined size once decompressed.

@@ -1,0 +1,27 @@
+# Private message exports: never send these to a build
+**/your_activity_across_facebook/
+**/your_facebook_activity/
+**/facebook-*/
+**/facebook-*.zip
+**/messages/inbox/
+
+# Build output and packages, which the image builds itself
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/TestResults/
+
+# Not needed in the image
+.git/
+.claude/
+.idea/
+.vs/
+.vscode/
+**/.DS_Store
+**/*.user
+**/.env
+**/.env.*
+deploy/
+.github/
+server/MessengerQuiz.Tests/

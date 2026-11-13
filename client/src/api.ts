@@ -55,6 +55,18 @@ function gzip(blob: Blob): Promise<Blob> {
   return new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob()
 }
 
+export type SiteConfig = {
+  // The public site only plays the demo chat, so real chats are never uploaded to it.
+  demoOnly: boolean
+}
+
+export async function getConfig(): Promise<SiteConfig> {
+  const response = await fetch('/api/config')
+  if (!response.ok) throw await toApiError(response)
+
+  return response.json()
+}
+
 // A made-up chat for trying the game without a Facebook export.
 export async function startDemo(): Promise<UploadedChat> {
   const response = await fetch('/api/chats/demo', { method: 'POST' })

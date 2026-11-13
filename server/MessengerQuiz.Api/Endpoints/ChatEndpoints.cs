@@ -35,6 +35,13 @@ public static class ChatEndpoints
     {
         var quiz = options.Value;
 
+        if (quiz.DemoOnly)
+        {
+            return Problem(
+                StatusCodes.Status403Forbidden,
+                "This site only plays the demo chat. Run Messenger Quiz on your own computer to play your own chats.");
+        }
+
         if (context.Request.ContentLength > quiz.MaxUploadBytes)
         {
             return Problem(StatusCodes.Status413PayloadTooLarge, "This chat is too large to upload.");
