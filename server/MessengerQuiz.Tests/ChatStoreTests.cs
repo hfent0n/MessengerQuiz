@@ -1,5 +1,4 @@
 using MessengerQuiz.Api;
-using MessengerQuiz.Api.Domain;
 using MessengerQuiz.Api.Storage;
 using Microsoft.Extensions.Options;
 
@@ -69,7 +68,7 @@ public class ChatStoreTests
 
     private static ChatSession Session()
     {
-        var message = new Message("m_0", "Ana", "A message", null, [], false);
-        return new ChatSession(new Chat("Test", ["Ana"], [message]), [message]);
+        var chat = TestChats.Chat(1, TestChats.Message());
+        return new ChatSession(chat, chat.Messages);
     }
 }

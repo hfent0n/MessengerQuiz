@@ -1,4 +1,3 @@
-using MessengerQuiz.Api.Domain;
 using MessengerQuiz.Api.Multiplayer;
 using MessengerQuiz.Api.Questions;
 using MessengerQuiz.Api.Storage;
@@ -10,6 +9,12 @@ public class RoomTests
     private static readonly TimeSpan Limit = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan Grace = TimeSpan.FromSeconds(1);
     private static readonly DateTimeOffset Start = new(2025, 1, 1, 12, 0, 0, TimeSpan.Zero);
+
+    // Options are people's numbers.
+    private const int Ana = 0;
+    private const int Ben = 1;
+    private const int Cal = 2;
+    private const int NotAnOption = 9;
 
     private readonly Room _room = NewRoom();
     private readonly Player _host = NewPlayer("Host", isHost: true);
@@ -64,8 +69,8 @@ public class RoomTests
     {
         StartGame(questionCount: 1);
 
-        Assert.True(_room.Answer(_host, "Ana", Start, Grace));
-        Assert.True(_room.Answer(_guest, "Ana", Start + TimeSpan.FromSeconds(10), Grace));
+        Assert.True(_room.Answer(_host, Ana, Start, Grace));
+        Assert.True(_room.Answer(_guest, Ana, Start + TimeSpan.FromSeconds(10), Grace));
 
         Assert.Equal(1000, _host.Score);
         Assert.Equal(750, _guest.Score);
@@ -76,10 +81,10 @@ public class RoomTests
     {
         StartGame(questionCount: 1);
 
-        Assert.False(_room.Answer(_host, "Nobody", Start, Grace));
-        Assert.True(_room.Answer(_host, "Ben", Start, Grace));
-        Assert.False(_room.Answer(_host, "Ana", Start, Grace));
-        Assert.False(_room.Answer(_guest, "Ana", Start + Limit + Grace + TimeSpan.FromMilliseconds(1), Grace));
+        Assert.False(_room.Answer(_host, NotAnOption, Start, Grace));
+        Assert.True(_room.Answer(_host, Ben, Start, Grace));
+        Assert.False(_room.Answer(_host, Ana, Start, Grace));
+        Assert.False(_room.Answer(_guest, Ana, Start + Limit + Grace + TimeSpan.FromMilliseconds(1), Grace));
     }
 
     [Fact]
@@ -87,7 +92,7 @@ public class RoomTests
     {
         StartGame(questionCount: 1);
 
-        Assert.True(_room.Answer(_host, "Ana", Start + Limit + Grace, Grace));
+        Assert.True(_room.Answer(_host, Ana, Start + Limit + Grace, Grace));
         Assert.Equal(500, _host.Score);
     }
 
@@ -96,10 +101,10 @@ public class RoomTests
     {
         StartGame(questionCount: 1);
 
-        _room.Answer(_host, "Ana", Start, Grace);
+        _room.Answer(_host, Ana, Start, Grace);
         Assert.Equal(RoomStage.Question, _room.Stage);
 
-        _room.Answer(_guest, "Ben", Start, Grace);
+        _room.Answer(_guest, Ben, Start, Grace);
         Assert.Equal(RoomStage.Reveal, _room.Stage);
     }
 
@@ -107,7 +112,7 @@ public class RoomTests
     public void TimingOutRevealsAndCountsTheWholeLimit()
     {
         StartGame(questionCount: 1);
-        _room.Answer(_host, "Ana", Start + TimeSpan.FromSeconds(4), Grace);
+        _room.Answer(_host, Ana, Start + TimeSpan.FromSeconds(4), Grace);
 
         Assert.False(_room.TimeOut(_room.Round - 1));
         Assert.True(_room.TimeOut(_room.Round));
@@ -148,7 +153,7 @@ public class RoomTests
     public void DisconnectedPlayersDontHoldUpTheGame()
     {
         StartGame(questionCount: 2);
-        _room.Answer(_host, "Ana", Start, Grace);
+        _room.Answer(_host, Ana, Start, Grace);
 
         _room.SetConnection(_guest, null, Start);
         Assert.Equal(RoomStage.Reveal, _room.Stage);
@@ -174,23 +179,23 @@ public class RoomTests
     public void RematchesResetScoresAndRememberAskedMessages()
     {
         StartGame(questionCount: 1);
-        _room.Answer(_host, "Ana", Start, Grace);
+        _room.Answer(_host, Ana, Start, Grace);
         _room.TimeOut(_room.Round);
         _room.MarkReady(_host, Start);
         _room.MarkReady(_guest, Start);
 
         Assert.True(_room.CanStart(_host));
-        _room.Start([Question("m_9")], ["m_9"], Start);
+        _room.Start([Question(9)], [9], Start);
 
         Assert.Equal(0, _host.Score);
-        Assert.Equal(["m_0", "m_9"], _room.AskedMessageIds.Order());
+        Assert.Equal([0, 9], _room.AskedPositions.Order());
     }
 
     [Fact]
     public void TheAnswerIsHiddenUntilTheReveal()
     {
         StartGame(questionCount: 1);
-        _room.Answer(_host, "Ben", Start, Grace);
+        _room.Answer(_host, Ben, Start, Grace);
 
         var guestView = RoomView.For(_room, _guest, Start);
         Assert.Null(guestView.Reveal);
@@ -202,8 +207,8 @@ public class RoomTests
 
         _room.TimeOut(_room.Round);
         var reveal = RoomView.For(_room, _guest, Start).Reveal!;
-        Assert.Equal("Ana", reveal.Answer);
-        Assert.Equal("Ben", reveal.Picks.Single(pick => pick.PlayerId == _host.Id).Option);
+        Assert.Equal(Ana, reveal.Answer);
+        Assert.Equal(Ben, reveal.Picks.Single(pick => pick.PlayerId == _host.Id).Option);
         Assert.Null(reveal.Picks.Single(pick => pick.PlayerId == _guest.Id).Option);
     }
 
@@ -211,8 +216,8 @@ public class RoomTests
     public void PlayersAreRankedByScoreThenSpeed()
     {
         StartGame(questionCount: 1);
-        _room.Answer(_guest, "Ana", Start + TimeSpan.FromSeconds(2), Grace);
-        _room.Answer(_host, "Ana", Start + TimeSpan.FromSeconds(2.001), Grace);
+        _room.Answer(_guest, Ana, Start + TimeSpan.FromSeconds(2), Grace);
+        _room.Answer(_host, Ana, Start + TimeSpan.FromSeconds(2.001), Grace);
 
         // Both score 950 once rounded, so the faster answer ranks first.
         _room.TimeOut(_room.Round);
@@ -222,16 +227,16 @@ public class RoomTests
 
     private void StartGame(int questionCount)
     {
-        var questions = Enumerable.Range(0, questionCount).Select(index => Question($"m_{index}")).ToList();
-        _room.Start(questions, questions.Select(question => question.MessageId), Start);
+        var questions = Enumerable.Range(0, questionCount).Select(Question).ToList();
+        _room.Start(questions, questions.Select(question => question.Position), Start);
     }
 
-    private static WhoSaidThisQuestion Question(string id) =>
-        new(id, "A long enough message for the quiz", [], [], ["Ana", "Ben", "Cal"], "Ana", 2);
+    private static WhoSaidThisQuestion Question(int position) =>
+        new(position, TestChats.Sealed($"message {position}"), 0, [], [Ana, Ben, Cal], Ana, 2);
 
     private static Room NewRoom(int maxPlayers = 8)
     {
-        var chat = new Chat("Test", ["Ana", "Ben"], [new Message("m_0", "Ana", "Hello there", null, [], false)]);
+        var chat = TestChats.Chat(2, TestChats.Message());
         return new Room("code", "chat", new ChatSession(chat, chat.Messages), Limit, maxPlayers);
     }
 

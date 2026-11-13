@@ -8,18 +8,32 @@ Right now there's one question type, **"Who said this?"**. It picks the chat's m
 
 ## Privacy
 
-**If you run Messenger Quiz on your own computer, none of your data leaves it.** The browser and the server both run on your machine and only talk to each other over `localhost`. Nothing is sent to Facebook, to a third party or to the internet.
+**Your chat is encrypted in your browser before it's uploaded, so the server can't read your messages or anyone's names.** The key is made on your device and never sent to the server. The app's [privacy page](client/src/screens/PrivacyScreen.tsx), at `/privacy`, explains this to players.
 
-The exception is **multiplayer**, when you choose it. The players you invite see the game's questions, which are messages from your chat. Photos, GIFs and videos are never used in multiplayer.
+**What the server can't read:**
+
+- message text
+- people's names, including who reacted to what
+- the chat's name
+- reaction emoji
+- photo, GIF and video file names
+
+**What it can see:**
+
+- how many people are in the chat, as numbers rather than names
+- when each message was sent, and which numbered person sent it
+- how many reactions and photos each message has, and roughly how long it is
+- your IP address, and the names players choose in multiplayer
 
 How your chat is handled:
 
-- **Only the chat you choose is read.** The browser reads that chat's message pages out of your download and sends them to the local server. Nothing else in the download is sent.
-- **Photos, GIFs and videos never leave the browser.** They're shown straight from your zip files. The server only gets their file names, so it knows which ones exist.
-- **Messages are held in memory only.** They're never saved to disk or a database, and never written to logs. A chat is deleted after 2 hours without use, when you press **Wipe my chat and exit**, or when the server stops.
-- **Each chat is private to the browser tab that uploaded it.** The server only answers requests that include that chat's secret ID.
+- **Only the chat you choose is read,** in your browser. Nothing else in your download is touched, and the pages themselves are never sent.
+- **Photos, GIFs and videos never leave your device.** They're shown straight from your zip files.
+- **Chats are held in memory only.** They're never saved to disk or a database, and never logged. A chat is deleted after 2 hours without use, when you press **Wipe my chat and exit**, or when the server restarts. The key stays in your browser tab and goes when you close it.
+- **Each chat is private to the tab that uploaded it.** The server only answers requests that include the chat's secret ID.
+- **Multiplayer links carry the key** after a `#`, which browsers never send to the server. Anyone with the link can read the game's questions, so only share it with people in the chat.
 
-**The hosted version only plays the demo chat.** Real chats can't be uploaded to it, so it never holds anyone's messages. Everything above applies when you run Messenger Quiz on your own computer, which is the only way to play your own chats.
+**The limit:** the page comes from the same server, so someone running a changed server could serve a page that leaks the key. The code is open source, and your browser's network tab shows exactly what's sent. To be certain, run Messenger Quiz on your own computer, where nothing leaves it at all.
 
 ## Requirements
 
@@ -85,8 +99,8 @@ To try it straight away, open http://localhost:5173 and press **Try a demo chat*
 
 To play with your own chat:
 
-1. Open http://localhost:5173 and choose **Choose your export zips**.
-2. Select all the zips from your download at once.
+1. Open http://localhost:5173 and tick the box to confirm you're in the chat.
+2. Choose **Choose your export zips** and select all the zips from your download at once.
 3. Pick a chat from the list. Search helps if you have a lot of them. Group chats with three or more active people work best. Very small chats are rejected because there's not enough to quiz on.
 4. Pick **Single player**, or **Multiplayer** to play with friends (below).
 5. For each message, pick who sent it. You'll see whether you were right and a running score.
@@ -108,19 +122,19 @@ When running locally, other people can only open the link if they're on your net
 
 ## Hosting
 
-Messenger Quiz can be hosted on Google Cloud Run as a demo-only site, within Cloud Run's free allowance and with a billing cap. [deploy/README.md](deploy/README.md) explains how, step by step.
+Messenger Quiz can be hosted on Google Cloud Run, within Cloud Run's free allowance and with a billing cap. [deploy/README.md](deploy/README.md) explains how, step by step.
 
-GitHub Actions tests every pull request. Once CI passes on `main`, it deploys the new version to Cloud Run and checks it's live. It signs in to Google with Workload Identity Federation, so no key is stored.
+GitHub Actions tests every pull request, and CodeQL and Dependabot check the code and its dependencies. Once CI passes on `main`, it deploys the new version to Cloud Run and checks it's live. It signs in to Google with Workload Identity Federation, so no key is stored.
 
 ## Project layout
 
 | Path | What's there |
 |---|---|
-| `server/MessengerQuiz.Api` | .NET Minimal API. Parses chats, picks messages and generates questions |
-| `server/MessengerQuiz.Api/Demo` | The made-up demo chat. Its photos are in `client/public/demo` |
+| `server/MessengerQuiz.Api` | .NET Minimal API. Checks encrypted uploads, picks messages and generates questions |
 | `server/MessengerQuiz.Tests` | Server tests. Uses hand-written fake chats, never real messages |
 | `server/MessengerQuiz.Api/Multiplayer` | Multiplayer rooms, rules, scoring and the SignalR hub |
 | `client` | React, TypeScript and Vite front end. Reads the zips and plays the quiz |
+| `client/src/chat` | Parses chats, encrypts and decrypts them, and the made-up demo chat. Its photos are in `client/public/demo` |
 | `Dockerfile` | Builds the client and server into one container for hosting |
 | `.github/workflows` | CI for pull requests, and deploys to Cloud Run from `main` |
 | `deploy` | Hosting guide, and the function that caps Google Cloud spending |

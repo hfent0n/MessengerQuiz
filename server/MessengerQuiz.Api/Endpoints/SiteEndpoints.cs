@@ -1,8 +1,6 @@
-using Microsoft.Extensions.Options;
-
 namespace MessengerQuiz.Api.Endpoints;
 
-// Endpoints for running the app as a hosted site: a health check, the client's settings, and the built client.
+// Endpoints for running the app as a hosted site: a health check and the built client.
 public static class SiteEndpoints
 {
     // Built scripts and styles have a hash in their names, so they can be cached for good. Other files, such as
@@ -19,9 +17,6 @@ public static class SiteEndpoints
         app.MapGet("/api/health", (IConfiguration config) =>
             Results.Ok(new { status = "ok", version = config["APP_VERSION"] ?? "dev" }));
 
-        app.MapGet("/api/config", (IOptions<QuizOptions> options) =>
-            Results.Ok(new ClientConfig(options.Value.DemoOnly)));
-
         // Unknown API paths are errors, not pages.
         app.MapFallback("/api/{**rest}", () => Results.NotFound());
 
@@ -29,6 +24,4 @@ public static class SiteEndpoints
         // In development the client runs on Vite's own server and there's no wwwroot, so this returns 404.
         app.MapFallbackToFile("index.html", ClientFiles);
     }
-
-    private sealed record ClientConfig(bool DemoOnly);
 }

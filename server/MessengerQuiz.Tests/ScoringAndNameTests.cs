@@ -53,4 +53,15 @@ public class ScoringAndNameTests
     {
         Assert.Null(PlayerNames.Clean(name));
     }
+
+    [Theory]
+    [InlineData("A1B2", true)]
+    [InlineData("A1B3", false)]
+    [InlineData("A1B", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void TokensMustMatchExactly(string? token, bool matches)
+    {
+        Assert.Equal(matches, RoomStore.TokensMatch("A1B2", token));
+    }
 }

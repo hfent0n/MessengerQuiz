@@ -1,29 +1,26 @@
 namespace MessengerQuiz.Api.Domain;
 
-public sealed record Chat(string Title, IReadOnlyList<string> Participants, IReadOnlyList<Message> Messages)
-{
-    // Drops media missing from the player's files. Exports often leave out older media.
-    public Chat KeepMedia(IReadOnlySet<string> availableMedia) => this with
-    {
-        Messages = Messages
-            .Select(message => message.Media.Count == 0
-                ? message
-                : message with { Media = message.Media.Where(availableMedia.Contains).ToList() })
-            .ToList(),
-    };
-}
+// A chat as the server holds it. The browser encrypts everything readable before upload, so the server works
+// only with numbers and flags, and hands sealed boxes back for the browser to open.
+public sealed record Chat(
+    // The sealed title and list of people's names.
+    string Title,
+    string People,
+    // People are numbered from 0, most messages first.
+    int PersonCount,
+    // Oldest first.
+    IReadOnlyList<Message> Messages);
 
 public sealed record Message(
-    string Id,
-    string Sender,
-    string Text,
+    // The message's place in the chat. Its sealed box only opens with this position, so it can't be moved.
+    int Position,
+    int Sender,
     DateTime? SentAt,
-    IReadOnlyList<Reaction> Reactions,
-    bool HasMedia)
-{
-    // Photos, GIFs and videos, as paths relative to the chat folder, such as "photos/123.jpg" or "videos/456.mp4".
-    // The folder says which kind each is. Stickers and voice messages aren't included.
-    public IReadOnlyList<string> Media { get; init; } = [];
-}
-
-public sealed record Reaction(string Emoji, string Reactor);
+    int Reactions,
+    int MediaCount,
+    // Worked out by the browser: long enough and not a system line or bare link, or has media.
+    bool Quizzable,
+    // An event line, such as someone naming the group. It ends a run of context.
+    bool System,
+    // The text, reactions and media paths.
+    string Sealed);

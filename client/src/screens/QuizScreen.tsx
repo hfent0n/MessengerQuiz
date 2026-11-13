@@ -27,7 +27,7 @@ export default function QuizScreen({ chat, media, onWipe, onExpired }: Props) {
   useEffect(() => {
     let cancelled = false
 
-    nextQuestion(chat.chatId)
+    nextQuestion(chat.chatId, chat.people)
       .then((question) => {
         if (cancelled) return
         setRound(question ? { status: 'asking', question } : { status: 'finished' })
@@ -44,7 +44,7 @@ export default function QuizScreen({ chat, media, onWipe, onExpired }: Props) {
     return () => {
       cancelled = true
     }
-  }, [chat.chatId, roundNumber, onExpired])
+  }, [chat.chatId, chat.people, roundNumber, onExpired])
 
   function answer(question: Question, choice: string) {
     setRound({ status: 'answered', question, choice })
@@ -107,7 +107,7 @@ export default function QuizScreen({ chat, media, onWipe, onExpired }: Props) {
         <div className="result">
           <p role="status">
             {round.choice === round.question.answer ? 'Correct!' : `It was ${round.question.answer}.`}{' '}
-            {reactionSummary(round.question.reactions)}
+            {reactionSummary(round.question.reactionCount)}
           </p>
           <button className="button primary" autoFocus onClick={nextRound}>Next question</button>
         </div>

@@ -1,4 +1,5 @@
-import { ApiError, type ContextMessage } from './api'
+import { ApiError } from './api'
+import type { SealedContext } from './chat/openQuestion'
 
 export const TIME_LIMITS = [10, 20, 30, 60] as const
 export const DEFAULT_TIME_LIMIT = 20
@@ -17,9 +18,12 @@ export type PlayerView = {
 }
 
 // What this player sees. The answer only arrives with the reveal.
+// Message text and people's names arrive sealed. The key from the game link opens them in the browser.
 export type RoomView = {
   code: string
   version: number
+  title: string
+  people: string
   stage: RoomStage
   timeLimitSeconds: number
   youId: string
@@ -31,16 +35,18 @@ export type RoomView = {
   questionCount: number
   maxScore: number
   question: {
-    text: string
-    context: ContextMessage[]
-    options: string[]
+    position: number
+    sealed: string
+    context: SealedContext[]
+    // People's numbers.
+    options: number[]
     remainingMilliseconds: number
-    yourAnswer: string | null
+    yourAnswer: number | null
   } | null
   reveal: {
-    answer: string
+    answer: number
     reactions: number
-    picks: { playerId: string; option: string | null; points: number }[]
+    picks: { playerId: string; option: number | null; points: number }[]
   } | null
 }
 

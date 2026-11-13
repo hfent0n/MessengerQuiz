@@ -2,13 +2,13 @@
 
 This guide puts Messenger Quiz on the internet with Google Cloud Run. It stays within Cloud Run's free monthly allowance for a portfolio site, and a billing cap turns everything off if spending ever reaches a limit you set.
 
-The hosted site **only plays the demo chat**. Real chats can't be uploaded to it, so it never holds anyone's messages. To play your own chats, run Messenger Quiz on your own computer.
+Chats are **encrypted in the player's browser** before upload, so the hosted server can't read messages or names. The [main README's privacy section](../README.md#privacy) explains what it can see.
 
 ## How it runs
 
 - **One container.** The [Dockerfile](../Dockerfile) builds the React client and serves it from the .NET server, so the whole app is one service.
 - **One instance at most.** Chats and multiplayer games live in the server's memory, so a second copy would split them up. It scales to zero when nobody is using it, which also wipes that memory.
-- **Configured with environment variables.** `Quiz__DemoOnly` turns uploads off. The Docker image turns it on by default, and the deploy command sets it again. `Quiz__TrustForwardedHeaders` reads visitors' addresses from Cloud Run's proxy, so the per-visitor rate limits work.
+- **Configured with environment variables.** `Quiz__TrustForwardedHeaders` reads visitors' addresses from Cloud Run's proxy, so the per-visitor rate limits work. The default limits are sized for a 512 MB instance.
 
 ## Cost
 
@@ -63,7 +63,7 @@ gcloud iam service-accounts create messenger-quiz-run --display-name "Messenger 
 Run this from the repository's root folder:
 
 ```bash
-gcloud run deploy messenger-quiz --source . --service-account messenger-quiz-run@$PROJECT_ID.iam.gserviceaccount.com --allow-unauthenticated --max-instances 1 --min-instances 0 --cpu 1 --memory 512Mi --timeout 3600 --set-env-vars Quiz__DemoOnly=true,Quiz__TrustForwardedHeaders=true
+gcloud run deploy messenger-quiz --source . --service-account messenger-quiz-run@$PROJECT_ID.iam.gserviceaccount.com --allow-unauthenticated --max-instances 1 --min-instances 0 --cpu 1 --memory 512Mi --timeout 3600 --set-env-vars Quiz__TrustForwardedHeaders=true
 ```
 
 What this does:
@@ -206,5 +206,3 @@ Optionally, stop changes reaching `main` without passing CI. On GitHub, open the
 Any setting in [`QuizOptions`](../server/MessengerQuiz.Api/QuizOptions.cs) can be changed with an environment variable named `Quiz__` followed by the setting's name. For example, `Quiz__QuestionsPerGame=5`.
 
 Add it to `--set-env-vars` in [`deploy.yml`](../.github/workflows/deploy.yml). Each deploy replaces the service's environment variables with that list, so a setting changed only in the console or with `gcloud run services update` is lost at the next deploy.
-
-Don't turn `Quiz__DemoOnly` off on the hosted site. The site would then accept and hold people's real chats, and the privacy promises in the main README only hold when it runs on your own computer.

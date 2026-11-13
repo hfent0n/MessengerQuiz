@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { linkWithKey, loadRoomKey, roomKeyText } from '../chat/keys'
+import { openPeople, openQuestion, personName, type OpenedQuestion } from '../chat/openQuestion'
 import MessageThread from '../components/MessageThread'
 import { questionPrompt, reactionSummary } from '../questionText'
 import type { PlayerView, RoomView } from '../rooms'
@@ -18,23 +20,25 @@ const NO_FILES = new Map()
 
 export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
   const { view, error, reconnecting, send } = useRoom(code, token)
+  const contents = useOpenedContents(code, view)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  async function act(method: 'Start' | 'Answer' | 'Ready', ...args: string[]) {
+  async function act(method: 'Start' | 'Answer' | 'Ready', ...args: number[]) {
     setActionError(await send(method, ...args))
   }
 
-  if (error || view?.stage === 'ended') {
+  const problem = view?.stage === 'ended' ? 'The host ended the game.' : (error ?? contents.error)
+  if (problem) {
     return (
       <section>
         <h2>Game over</h2>
-        <p role="alert">{view?.stage === 'ended' ? 'The host ended the game.' : error}</p>
+        <p role="alert">{problem}</p>
         <button className="button primary" onClick={onLeave}>Back to the start</button>
       </section>
     )
   }
 
-  if (!view) return <p className="note">Connecting…</p>
+  if (!view || !contents.people) return <p className="note">Connecting…</p>
 
   const playing = view.stage === 'question' || view.stage === 'reveal'
 
@@ -55,7 +59,17 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
       {playing && (
         <div className="game">
           <ScoreBars view={view} />
-          <Round view={view} onAnswer={(option) => act('Answer', option)} onReady={() => act('Ready')} />
+          {contents.question ? (
+            <Round
+              view={view}
+              people={contents.people}
+              opened={contents.question}
+              onAnswer={(option) => act('Answer', option)}
+              onReady={() => act('Ready')}
+            />
+          ) : (
+            <p className="note">Decrypting…</p>
+          )}
         </div>
       )}
 
@@ -72,8 +86,53 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
   )
 }
 
+// Message text and names arrive sealed. The key came with the game link, after the #, which is never sent to the
+// server.
+function useOpenedContents(code: string, view: RoomView | null) {
+  const [key, setKey] = useState<CryptoKey | null | undefined>(undefined)
+  const [people, setPeople] = useState<string[] | null>(null)
+  const [opened, setOpened] = useState<{ position: number; question: OpenedQuestion } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void loadRoomKey(code).then(setKey)
+  }, [code])
+
+  const sealedPeople = view?.people
+  useEffect(() => {
+    if (!key || !sealedPeople) return
+    openPeople(key, sealedPeople).then(setPeople, () => setError(DECRYPT_ERROR))
+  }, [key, sealedPeople])
+
+  const question = view?.question
+  const position = question?.position
+  const sealed = question?.sealed
+  useEffect(() => {
+    if (!key || !question || position === undefined) return
+    let current = true
+    openQuestion(key, question).then(
+      (opened) => current && setOpened({ position, question: opened }),
+      () => current && setError(DECRYPT_ERROR),
+    )
+    return () => {
+      current = false
+    }
+    // The question object is new with every update, so it's left out. Only a different message needs opening again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, position, sealed])
+
+  return {
+    error: key === null ? "This link is missing its key. Ask the host to send the whole link again." : error,
+    people,
+    question: opened && opened.position === position ? opened.question : null,
+  }
+}
+
+const DECRYPT_ERROR = "This game's messages couldn't be decrypted. Ask the host to send the whole link again."
+
 function Lobby({ view, onStart }: { view: RoomView; onStart: () => void }) {
-  const link = `${location.origin}${playPath(view.code)}`
+  const key = roomKeyText(view.code)
+  const link = linkWithKey(`${location.origin}${playPath(view.code)}`, key ?? '')
   const others = view.players.length - 1
 
   return (
@@ -83,7 +142,8 @@ function Lobby({ view, onStart }: { view: RoomView; onStart: () => void }) {
           <p>Send this link to the people you want to play with:</p>
           <CopyLink link={link} />
           <p className="warning">
-            Anyone with this link will see messages from this chat. Only share it with people in the chat.
+            The link holds the key that decrypts this chat's messages. Anyone with it will see messages from the chat,
+            so only share it with people in the chat.
           </p>
         </>
       ) : (
@@ -167,21 +227,31 @@ function playerStatus(view: RoomView, player: PlayerView): string {
   return ''
 }
 
-function Round({ view, onAnswer, onReady }: { view: RoomView; onAnswer: (option: string) => void; onReady: () => void }) {
+type RoundProps = {
+  view: RoomView
+  people: string[]
+  opened: OpenedQuestion
+  onAnswer: (option: number) => void
+  onReady: () => void
+}
+
+function Round({ view, people, opened, onAnswer, onReady }: RoundProps) {
   const question = view.question!
   const reveal = view.reveal
   const you = view.players.find((player) => player.id === view.youId)
-  const pickers = (option: string) =>
+  // Multiplayer has no media, since it only exists on the host's device. Context with media shows a placeholder.
+  const context = opened.context.map((message) => ({ ...message, media: [] }))
+  const pickers = (option: number) =>
     view.players.filter((player) => reveal?.picks.some((pick) => pick.playerId === player.id && pick.option === option))
   const waitingFor = view.players.filter((player) => player.connected && !(reveal ? player.ready : player.answered))
 
   return (
     <div className="round">
-      <p className="prompt">{questionPrompt({ text: question.text, media: [], context: question.context })}</p>
+      <p className="prompt">{questionPrompt({ text: opened.text, media: [], context })}</p>
       {view.stage === 'question' && (
         <Countdown key={view.questionNumber} remaining={question.remainingMilliseconds} total={view.timeLimitSeconds * 1000} />
       )}
-      <MessageThread text={question.text} media={[]} context={question.context} files={NO_FILES} />
+      <MessageThread text={opened.text} media={[]} context={context} files={NO_FILES} />
 
       <div className="options">
         {question.options.map((option) => (
@@ -191,7 +261,7 @@ function Round({ view, onAnswer, onReady }: { view: RoomView; onAnswer: (option:
             disabled={view.stage !== 'question' || question.yourAnswer !== null}
             onClick={() => onAnswer(option)}
           >
-            {option}
+            {personName(people, option)}
             {reveal && pickers(option).length > 0 && (
               <span className="pickers">{pickers(option).map((player) => player.name).join(', ')}</span>
             )}
@@ -206,7 +276,7 @@ function Round({ view, onAnswer, onReady }: { view: RoomView; onAnswer: (option:
       {reveal && (
         <div className="result">
           <p role="status">
-            {revealSummary(view)} {reactionSummary(reveal.reactions)}
+            {revealSummary(view, people)} {reactionSummary(reveal.reactions)}
           </p>
           {you?.ready ? (
             <p className="note">Waiting for {names(waitingFor)}…</p>
@@ -221,14 +291,15 @@ function Round({ view, onAnswer, onReady }: { view: RoomView; onAnswer: (option:
   )
 }
 
-function revealSummary(view: RoomView): string {
+function revealSummary(view: RoomView, people: string[]): string {
   const reveal = view.reveal!
+  const answer = personName(people, reveal.answer)
   const yours = reveal.picks.find((pick) => pick.playerId === view.youId)
-  if (!yours?.option) return `Out of time. It was ${reveal.answer}.`
-  return yours.option === reveal.answer ? `Correct! +${yours.points} points.` : `It was ${reveal.answer}.`
+  if (yours?.option == null) return `Out of time. It was ${answer}.`
+  return yours.option === reveal.answer ? `Correct! +${yours.points} points.` : `It was ${answer}.`
 }
 
-function optionClass(view: RoomView, option: string): string {
+function optionClass(view: RoomView, option: number): string {
   const question = view.question!
   if (view.reveal) {
     if (option === view.reveal.answer) return 'button option correct'

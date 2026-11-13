@@ -4,6 +4,7 @@ using MessengerQuiz.Api.Questions;
 using MessengerQuiz.Api.Selection;
 using MessengerQuiz.Api.Storage;
 using Microsoft.Extensions.Options;
+using static MessengerQuiz.Tests.TestChats;
 
 namespace MessengerQuiz.Tests;
 
@@ -14,7 +15,7 @@ public class WhoSaidThisGeneratorTests
     [Fact]
     public void AnswerIsAlwaysAmongDistinctOptions()
     {
-        var session = Session(["Ana", "Ben", "Cal", "Dee", "Eve", "Fay"], messageCount: 60);
+        var session = Session(people: 6, messageCount: 60);
 
         for (var index = 0; index < 60; index++)
         {
@@ -23,21 +24,20 @@ public class WhoSaidThisGeneratorTests
             Assert.Contains(question.Answer, question.Options);
             Assert.Equal(4, question.Options.Count);
             Assert.Equal(4, question.Options.Distinct().Count());
+            Assert.All(question.Options, option => Assert.InRange(option, 0, 5));
         }
     }
 
     [Fact]
     public void TwoPersonChatsGetTwoOptions()
     {
-        var question = _generator.Next(Session(["Ana", "Ben"], messageCount: 2))!;
-
-        Assert.Equal(2, question.Options.Count);
+        Assert.Equal(2, _generator.Next(Session(people: 2, messageCount: 2))!.Options.Count);
     }
 
     [Fact]
     public void AnswerIsNotAlwaysInTheSamePosition()
     {
-        var session = Session(["Ana", "Ben", "Cal", "Dee"], messageCount: 200);
+        var session = Session(people: 4, messageCount: 200);
 
         var positions = Enumerable.Range(0, 200)
             .Select(_ => _generator.Next(session)!)
@@ -50,7 +50,7 @@ public class WhoSaidThisGeneratorTests
     [Fact]
     public void ReturnsNullOnceEveryMessageHasBeenAsked()
     {
-        var session = Session(["Ana", "Ben"], messageCount: 2);
+        var session = Session(people: 2, messageCount: 2);
 
         Assert.NotNull(_generator.Next(session));
         Assert.NotNull(_generator.Next(session));
@@ -61,80 +61,60 @@ public class WhoSaidThisGeneratorTests
     public async Task ParallelRequestsNeverRepeatAMessage()
     {
         const int messageCount = 2000;
-        var session = Session(["Ana", "Ben", "Cal"], messageCount);
+        var session = Session(people: 3, messageCount);
 
-        var tasks = Enumerable.Range(0, messageCount)
-            .Select(_ => Task.Run(() => _generator.Next(session)!.MessageId));
-        var ids = await Task.WhenAll(tasks);
+        var positions = await Task.WhenAll(Enumerable.Range(0, messageCount)
+            .Select(_ => Task.Run(() => _generator.Next(session)!.Position)));
 
-        Assert.Equal(messageCount, ids.Distinct().Count());
+        Assert.Equal(messageCount, positions.Distinct().Count());
     }
 
     [Fact]
-    public void IncludesEarlierMessagesFromTheSameSenderAsContext()
+    public void ReturnsTheSealedBoxesForTheBrowserToOpen()
     {
-        var start = new DateTime(2023, 6, 1, 12, 0, 0);
-        var messages = new[]
-        {
-            new Message("m_0", "Ben", "Unrelated", start, [], false),
-            new Message("m_1", "Ana", "Guess what", start.AddMinutes(1), [], false),
-            new Message("m_2", "Ana", "", start.AddMinutes(2), [], true) { Media = ["photos/a.jpg"] },
-            new Message("m_3", "Ana", "That was me", start.AddMinutes(3), [], false),
-        };
-        var session = new ChatSession(new Chat("Test", ["Ana", "Ben"], messages), [messages[3]]);
+        var chat = Chat(2,
+            Message(sender: 1, minute: 0, label: "unrelated"),
+            Message(sender: 0, minute: 1, label: "guess what"),
+            Message(sender: 0, minute: 2, media: 1, quizzable: false, label: "a photo"),
+            Message(sender: 0, minute: 3, reactions: 4, label: "that was me"));
+        var session = new ChatSession(chat, [chat.Messages[3]]);
 
         var question = _generator.Next(session)!;
 
-        Assert.Equal(
-            [("Guess what", false, ""), ("", true, "photos/a.jpg")],
-            question.Context.Select(context => (context.Text, context.HasMedia, string.Join(",", context.Media))));
+        Assert.Equal((3, "that was me", 0, 4), (question.Position, Label(question.Sealed), question.Answer, question.Reactions));
+        Assert.Equal([(1, "guess what", 0), (2, "a photo", 1)],
+            question.Context.Select(context => (context.Position, Label(context.Sealed), context.MediaCount)));
     }
 
     [Fact]
     public void ContextMessagesAreNeverAskedLater()
     {
-        var start = new DateTime(2023, 6, 1, 12, 0, 0);
-        var messages = Enumerable.Range(0, 4)
-            .Select(index => new Message($"m_{index}", "Ana", $"Message {index}", start.AddMinutes(index), [], false))
-            .Append(new Message("m_4", "Ben", "Reply", start.AddMinutes(5), [], false))
-            .ToList();
-        var session = new ChatSession(new Chat("Test", ["Ana", "Ben"], messages), messages);
-        var seen = new List<string>();
+        var chat = Chat(2, [.. Enumerable.Range(0, 4).Select(minute => Message(sender: 0, minute: minute)), Message(sender: 1, minute: 5)]);
+        var session = new ChatSession(chat, chat.Messages);
+        var seen = new List<int>();
 
         while (_generator.Next(session) is { } question)
         {
-            Assert.DoesNotContain(question.MessageId, seen);
-            seen.Add(question.MessageId);
-            seen.AddRange(question.Context.Select(context => messages.Single(message => message.Text == context.Text).Id));
+            Assert.DoesNotContain(question.Position, seen);
+            seen.Add(question.Position);
+            seen.AddRange(question.Context.Select(context => context.Position));
         }
 
         // Context can repeat across questions. Every message is still either asked or shown.
-        Assert.Equal(messages.Select(message => message.Id).ToHashSet(), seen.ToHashSet());
+        Assert.Equal(Enumerable.Range(0, 5).ToHashSet(), seen.ToHashSet());
     }
 
     [Fact]
-    public void PhotoQuestionsIncludeTheirPhotos()
+    public void MediaQuestionsSayHowManyItemsTheyHave()
     {
-        var messages = new[]
-        {
-            new Message("m_0", "Ana", "", null, [], true) { Media = ["photos/a.jpg", "photos/b.jpg"] },
-            new Message("m_1", "Ben", "Unrelated", null, [], false),
-        };
-        var session = new ChatSession(new Chat("Test", ["Ana", "Ben"], messages), [messages[0]]);
+        var chat = Chat(2, Message(sender: 0, media: 2), Message(sender: 1));
 
-        var question = _generator.Next(session)!;
-
-        Assert.Equal(["photos/a.jpg", "photos/b.jpg"], question.Media);
-        Assert.Equal("", question.Text);
+        Assert.Equal(2, _generator.Next(new ChatSession(chat, [chat.Messages[0]]))!.MediaCount);
     }
 
-    private static ChatSession Session(IReadOnlyList<string> participants, int messageCount)
+    private static ChatSession Session(int people, int messageCount)
     {
-        var messages = Enumerable.Range(0, messageCount)
-            .Select(index => new Message(
-                $"m_{index}", participants[index % participants.Count], "A message", null, [], false))
-            .ToList();
-
-        return new ChatSession(new Chat("Test", participants, messages), messages);
+        var chat = Chat(people, Enumerable.Range(0, messageCount).Select(index => Message(sender: index % people)));
+        return new ChatSession(chat, chat.Messages);
     }
 }

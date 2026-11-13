@@ -6,7 +6,7 @@ A web game where a player uploads one Facebook Messenger chat and is quizzed on 
 - **Frontend:** React, TypeScript and Vite
 - **Storage:** none. Chats stay in memory and are never written to disk.
 
-"Who said this?" from a single uploaded chat is built, in single player and [multiplayer](#multiplayer). The app can be [hosted on Google Cloud Run](#hosting) as a demo-only site. Everything else is under [Future work](#future-work).
+"Who said this?" from a single uploaded chat is built, in single player and [multiplayer](#multiplayer). Chats are [encrypted in the browser](#going-live), so the server can't read messages or names, and the app is [hosted on Google Cloud Run](#hosting). Everything else is under [Future work](#future-work).
 
 ## Running it
 
@@ -103,70 +103,71 @@ An unzipped chat folder can still be chosen instead. If it has no message pages 
 
 | Method | Route | Purpose |
 |---|---|---|
-| `POST` | `/api/chats` | Upload and parse one chat |
+| `POST` | `/api/chats` | Upload one encrypted chat |
 | `GET` | `/api/questions/who-said-this` | Get the next question |
-| `POST` | `/api/chats/demo` | Start a quiz on the built-in demo chat |
 | `POST` | `/api/rooms` | Create a multiplayer game from the chat in `X-Chat-Id` |
 | `POST` | `/api/rooms/{code}/players` | Join a game in its lobby |
 | WebSocket | `/api/rooms/hub` | Play a game live, through SignalR |
 | `DELETE` | `/api/chats/current` | Wipe the chat from memory |
-| `GET` | `/api/config` | The client's settings: `{ demoOnly }` |
-| `GET` | `/api/health` | Check the server is up, for deploys |
+| `GET` | `/api/health` | Check the server is up, and which commit it runs, for deploys |
 
-Any other path outside `/api` returns the built client's `index.html`, so game links load the app when it's hosted.
+Any other path outside `/api` returns the built client's `index.html`, so game links and `/privacy` load the app when it's hosted.
 
-The `GET` and `DELETE` routes identify the chat with an `X-Chat-Id` header. The ID acts as a password, so it stays out of URLs, where it would reach browser history and request logs.
+The `GET` and `DELETE` routes identify the chat with an `X-Chat-Id` header. The ID is 256 random bits and acts as a password, so it stays out of URLs, where it would reach browser history and request logs.
 
 ### `POST /api/chats`
 
-Multipart form with one or more `message_*.html` files, all from the same chat, and an optional `media` field. Each file may be gzipped, which the server detects from its first two bytes. Decompressed pages are limited to 100 MB in total, so a small upload can't expand into a huge one. The `media` field is a JSON array of the media paths the player has, such as `["photos/123.jpg", "gifs/4.gif", "videos/5.mp4"]`. The server only asks media questions about these, because exports often leave out older media.
+JSON, usually gzipped, which the server detects from its first two bytes. The browser parses the chat and seals everything readable before sending it. See [Going live](#going-live).
 
 ```json
 {
-  "chatId": "6f1c...",
-  "title": "Chat name",
-  "participants": ["A", "B", "C", "D"],
-  "messageCount": 18762,
-  "eligibleCount": 2140
+  "title": "<sealed>",
+  "people": "<sealed>",
+  "personCount": 4,
+  "messages": [
+    { "sender": 2, "sentAt": 1709300000, "reactions": 3, "media": 0, "quizzable": true, "system": false, "sealed": "<sealed>" }
+  ]
 }
+```
+
+A message's place in the list is its position, which its sealed box is bound to. `sentAt` is seconds since 1970, or null.
+
+```json
+{ "chatId": "6f1c...", "eligibleCount": 2140 }
 ```
 
 | Status | When |
 |---|---|
-| `201` | The chat was parsed |
-| `400` | No files, or a file isn't a recognisable Messenger page |
-| `400` | The `media` field isn't a JSON array of strings, or lists more than 50,000 paths |
-| `400` | A gzipped file is corrupt |
-| `400` | The files come from different chats, based on the page title and participants |
-| `413` | The upload is over the 50 MB limit, or its pages are over 100 MB once decompressed |
+| `201` | The chat was stored |
+| `400` | The body isn't a chat, a gzip stream is corrupt, a sender is out of range, a count is negative, a time is outside 2000 to 2100, or a sealed box isn't base64url of a plausible length |
+| `400` | The chat has no messages, or more than 300,000 |
+| `413` | The upload is over 20 MB, or over 40 MB once decompressed |
 | `422` | The chat has fewer than 2 senders or too few eligible messages |
 | `429` | The IP address has hit the upload rate limit |
-| `503` | The server's memory cap is reached, or too many chats are already being parsed |
+| `503` | The server's memory cap is reached, or too many uploads are already being read |
 
-Kestrel's default body limit is 30 MB. The endpoint sets its own 50 MB limit, so the cap is deliberate and leaves room for larger chats than this export contains.
+### The demo chat
 
-### `POST /api/chats/demo`
-
-No body. Starts a new session on a made-up chat, "Flat 4B", so people without a Facebook export can try the game. It returns the same response as an upload and shares its rate limit. Every call gets its own session, so players don't share which questions they've had.
-
-The chat is `Demo/demo-chat.json`, embedded in the API. Each message has a sender, text or media, reactions, and either an `at` time or `after`, the minutes since the previous message. Its three photos are SVGs in `client/public/demo/photos`, and the client lists them in `demoChat.ts`. The demo's photos ship with the app, so unlike a player's media they still show after a refresh.
+A made-up chat, "Flat 4B", so people without a Facebook export can try the game. It's `client/src/chat/demo-chat.json`, and goes through the same encryption and upload as a real chat, so the server can't tell it apart. Each message has a sender, text or media, reactions, and either an `at` time or `after`, the minutes since the previous message. Its three photos are SVGs in `client/public/demo/photos`, and they still show after a refresh, unlike a player's media.
 
 ### `GET /api/questions/who-said-this`
 
 ```json
 {
-  "messageId": "m_1042",
-  "text": "...",
-  "media": ["photos/123.jpg"],
+  "position": 1042,
+  "sealed": "<sealed>",
+  "mediaCount": 1,
   "context": [
-    { "text": "Earlier message from the same sender", "hasMedia": false, "media": [] },
-    { "text": "", "hasMedia": true, "media": ["videos/122.mp4"] }
+    { "position": 1040, "sealed": "<sealed>", "mediaCount": 0 },
+    { "position": 1041, "sealed": "<sealed>", "mediaCount": 1 }
   ],
-  "options": ["A", "B", "C", "D"],
-  "answer": "B",
+  "options": [0, 3, 1, 2],
+  "answer": 3,
   "reactions": 3
 }
 ```
+
+Options and the answer are people's numbers. The browser opens the boxes and shows names from its own copy of the people list.
 
 | Status | When |
 |---|---|
@@ -186,13 +187,13 @@ ASP.NET handles requests in parallel, so the shared parts need these protections
 |---|---|
 | The ID leaks through URLs or logs | Send it in the `X-Chat-Id` header |
 | Two tabs corrupt or repeat the asked-message list | Lock per chat around choosing a message and recording it |
-| Large uploads exhaust memory and crash the server, wiping every chat | Cap total stored chat size, 1 GB by default, and return `503` when full |
-| Simultaneous parsing slows everyone down | Parse at most 2 uploads at once and return `503` beyond a short queue |
+| Large uploads exhaust memory and crash the server, wiping every chat | Cap total stored chat size, 192 MB by default to suit a 512 MB instance, and return `503` when full |
+| Simultaneous uploads use too much memory at once | Read at most 2 uploads at once and return `503` beyond a short queue |
 | One client floods uploads | Limit each IP address to 5 uploads per minute and return `429` |
 
 The limits are configuration values, so they can be tuned without code changes.
 
-Parsed messages never change after upload, so they can be read in parallel without locking.
+Stored messages never change after upload, so they can be read in parallel without locking.
 
 ## Build steps
 
@@ -305,7 +306,10 @@ The chat ID is kept in `sessionStorage`, so it survives a refresh but is cleared
 | Ready step after each reveal, with disconnected players skipped | Players get time to react to the message, and a player who leaves can't stall the game |
 | A built-in demo chat | Recruiters and other visitors can try the game without requesting a Facebook download |
 | No pseudonyms or encryption yet | Readable names and text make debugging much easier while the game is built. See [Privacy](#privacy) under future work |
-| The hosted site is demo-only | The privacy promises rely on the server running on the player's own computer. A public server would otherwise hold strangers' private messages |
+| Encrypt in the browser before the hosted site takes real chats | A public server would otherwise hold strangers' readable private messages. Chosen over pseudonyms, which leave text readable, and over hardening alone |
+| Sealed boxes are bound to position, not sender | In multiplayer, players open questions before the reveal. Binding the sender would let a player find the answer by testing it in dev tools |
+| Keys live in `sessionStorage` | Like the chat ID, they survive a refresh, stay in the tab and go when it closes |
+| No demo-only mode | The server can't tell an encrypted demo from a real chat, so it couldn't enforce it. Encryption replaced it |
 | Google Cloud Run rather than AWS | It scales to zero, supports WebSockets and has a lasting free allowance. On AWS, every way to run this either costs money after the free plan's credits run out or means managing a server |
 | A function that turns billing off, not just a budget | Google Cloud budgets only send alerts, so a function makes the budget a hard cap |
 | GitHub Actions with Workload Identity Federation | The code is already on GitHub, Actions is free for public repositories, and no long-lived Google key exists to leak |
@@ -389,21 +393,100 @@ Each player has a score bar that fills towards the most points possible in the g
 
 ## Hosting
 
-Built, including CI/CD. Step-by-step setup is in [`deploy/README.md`](deploy/README.md).
+Built, including CI/CD. Step-by-step setup is in [`deploy/README.md`](deploy/README.md). The site took only the demo chat until browser encryption was built.
 
 - **Container:** a multi-stage [Dockerfile](Dockerfile) builds the client with Node, publishes the server with the .NET SDK, and runs both from Microsoft's chiseled ASP.NET image. That image has no shell or package manager and runs as a non-root user. The `-extra` variant includes ICU, which player-name normalisation needs.
 - **Serving the client:** the server serves `wwwroot` with static files and falls back to `index.html` for any other path outside `/api`. Hashed files under `/assets` are cached for a year. Everything else, including `index.html`, is sent with `no-cache`, so a redeploy never leaves a page asking for deleted scripts.
-- **Demo-only:** `Quiz:DemoOnly` makes `POST /api/chats` return `403`, and `/api/config` tells the client to show only the demo, with a link to run it locally. The image turns it on by default.
+- **Security headers** on every response: a Content Security Policy allowing only this site's own scripts, styles and connections, plus `nosniff`, `DENY` framing, `no-referrer` and a restrictive `Permissions-Policy`. Game connections from another origin are refused.
 - **Port:** the server listens on `PORT` when the host sets it.
 - **Visitor addresses:** `Quiz:TrustForwardedHeaders` reads the last `X-Forwarded-For` address, the one Cloud Run's proxy adds, so rate limits apply per visitor. Earlier addresses can be faked, so they're ignored. It must stay off when the server can be reached directly.
 - **Cloud Run settings:** at most 1 instance, scaling to 0, 1 CPU, 512 MB and a 60-minute request timeout for multiplayer WebSockets. The app runs as a service account with no permissions.
 - **What gets uploaded:** `.gcloudignore` and `.dockerignore` leave out export folders and zips, packages, build output and tests.
 - **Billing cap:** a budget publishes alerts to Pub/Sub. A Node function in [`deploy/billing-cap`](deploy/billing-cap) unlinks the project from billing once the cost reaches the budget. Its service account only has Project Billing Manager. Billing data lags by hours, so spending can overshoot slightly.
 - **Image storage:** a cleanup policy keeps the 3 latest images, to stay within the free allowance.
+- **Scanning:** Dependabot opens weekly update pull requests for NuGet, npm, GitHub Actions and the Docker images. CodeQL scans C#, TypeScript and the workflows on pull requests, pushes to `main` and weekly.
 - **CI:** [`ci.yml`](.github/workflows/ci.yml) runs on pull requests and pushes to `main`, as four parallel jobs: server tests, client lint, tests and build, the billing cap's tests, and a Docker build.
 - **CD:** [`deploy.yml`](.github/workflows/deploy.yml) runs when CI passes on a push to `main`, or by hand. It deploys the commit CI checked, not whatever `main` points to by then. It builds the image, pushes it to Artifact Registry tagged with the commit, deploys it with the settings kept in the workflow, and waits until `/api/health` reports that commit as `version`, from `APP_VERSION`. Deploys run one at a time and are never cancelled halfway.
 - **Signing in from GitHub:** Workload Identity Federation swaps GitHub's OIDC token for a short-lived Google token, so no key is stored. The provider only accepts this repository's numeric ID on `refs/heads/main`. The ID can't be reused the way a renamed repository's name can. The `github-deployer` account can only deploy Cloud Run revisions, run them as `messenger-quiz-run`, and push to the image repository.
-- **Tests:** server tests for the health check and its version, demo-only mode, unknown API paths, game links and cache headers, and per-visitor rate limits with faked addresses. The billing function's alert handling has `node --test` tests.
+- **Tests:** server tests for the health check and its version, security headers, the origin check, unknown API paths, game links and cache headers, and per-visitor rate limits with faked addresses. The billing function's alert handling has `node --test` tests.
+
+## Going live
+
+Built. The hosted site takes real chats, with **message text and people's names encrypted in the browser**, so the server can't read them. Where future text-based games run, in the browser or on the server with consent, is decided when the first one is planned.
+
+### What the server sees
+
+| Data | Before | Now |
+|---|---|---|
+| Message text | Readable | Encrypted |
+| People's names, as senders, reactors and options | Readable | Encrypted. The server sees only numbers: person 0, person 1 and so on |
+| Chat title | Readable | Encrypted |
+| Reaction emoji and who reacted | Readable | Encrypted. The server sees only how many |
+| Media file names | Readable | Encrypted. The server sees only how many |
+| When each message was sent | Readable | Still readable, since it's needed for context runs |
+| Message order, and which person sent each one | Readable | Still readable, as numbers |
+| Whether a message can be a question | Worked out by the server | Worked out by the browser and sent as a flag |
+| Player's IP address and multiplayer player names | Readable | Still readable |
+
+### Design
+
+1. **Parsing happens in the browser.** `client/src/chat/parseChat.ts` is a port of the old server parser, using `DOMParser` with the same selectors. Its tests run in vitest with jsdom. The server parser and AngleSharp were removed.
+2. **The browser decides eligibility.** `systemMessages.ts` holds the length, system-line and link rules. The browser sends `quizzable` and `system` flags, and the server keeps the selection rules: reaction ranking, balancing by sender and context runs.
+3. **Encryption** in `sealing.ts` uses AES-GCM with a 256-bit key from Web Crypto, made per chat:
+   - **One sealed box per message:** text, reactions with names, and media paths, with a random 96-bit IV. Names and title are sealed the same way.
+   - **Labels:** each box is bound by additional authenticated data to a label: `title`, `people` or `message:<position>`. The server can't move text to another message or alter it, because opening would fail.
+   - **Not the sender:** boxes aren't bound to the sender, because in multiplayer players open questions before the reveal. See [Decisions](#decisions).
+4. **The upload,** built in `sealChat.ts`, holds per message the sender number, time, reaction count, available media count, flags and sealed box. Media the player doesn't have is left out before sealing. The server checks counts, ranges, sizes and base64url, but can't check the text.
+5. **Questions** carry positions, numbers and sealed boxes. `openQuestion.ts` opens them, and names come from the people list kept in the tab.
+6. **Keys:**
+   - **Storage:** keys are kept in `sessionStorage` as base64url and deleted on wipe or leave.
+   - **Multiplayer:** the host's game link carries the key after `#`, as in `/play/<code>#k=<key>`. Browsers never send that part to the server, and `Referrer-Policy: no-referrer` keeps the page address out of other requests. Players open the room's sealed people list and questions with it.
+   - **Missing key:** a link without the key shows "This link is incomplete".
+7. **The demo** ships with the client and is encrypted and uploaded like any chat. `POST /api/chats/demo`, `/api/config` and demo-only mode were removed.
+8. **Media** still never leaves the device. The browser maps the sealed media paths back to its own files.
+
+### Hardening
+
+- **Security headers and same-origin game connections:** see [Hosting](#hosting).
+- **Tokens:** player tokens are compared in constant time.
+- **Chat IDs:** 256 bits from `RandomNumberGenerator`.
+- **Limits sized for a 512 MB instance:** 20 MB uploads, 40 MB decompressed, a 192 MB chat cache, 300,000 messages and 100,000-character sealed boxes. Not yet checked against real memory use.
+- **Dependency checks:** Dependabot and CodeQL.
+
+### Consent and transparency
+
+- **A privacy page** at `/privacy` states what the server can and can't read, how long it keeps chats, how multiplayer keys work, and what encryption doesn't protect against.
+- **A consent box:** the player confirms they're in the chat and will only share links with people in it. The zip and folder pickers stay disabled until it's ticked. The demo doesn't need it.
+- **The README's privacy section** is rewritten for the hosted site.
+
+### Tests
+
+- **Client:**
+  - the parser port
+  - the text rules
+  - sealing: opening, a box never containing its text, refusing moved, changed or wrong-key boxes
+  - the upload, which must contain none of the chat's names, title, text or emoji
+  - the demo chat
+  - game link keys
+- **Server:**
+  - upload validation, with a table of broken uploads
+  - sealed boxes returned exactly as uploaded
+  - selection and questions with fake sealed boxes
+  - multiplayer views carrying sealed people and questions
+- **Browser, with the production build on one server:**
+  - the demo and a synthetic export zip, where the upload and question responses held none of the names or text
+  - a photo question shown from the zip under the Content Security Policy
+  - a link without its key refused
+  - a two-tab multiplayer game decrypting with the key from the link
+  - no console errors
+
+### Limits that stay
+
+- **The server serves the code.** A dishonest operator could serve code that leaks the key. Open source code and the network tab let players check what's sent. Confidential computing would be the next step.
+- **Timing and lengths are visible.** The server sees who talked when, how much, and roughly how long each sealed message is. Padding text to length buckets would blur lengths.
+- **The server is trusted for who sent what.** It needs to know which numbered person sent each message to run the quiz.
+- **Large chats are parsed and sealed on the main thread,** which may pause the page briefly. A web worker would avoid that.
+- **Server-side text analysis is ruled out** unless a game asks for consent.
 
 ## Future work
 
@@ -443,36 +526,16 @@ Each is a new `IQuestionGenerator`, scoped to the uploaded chat.
 ### Hosting
 
 - Optionally, define the Google Cloud setup in Terraform, so the environment can be rebuilt from the repository.
-- Measuring real process memory under load. The server reached about 1 GB after parsing 64 chats back to back, but the 1 GB cap only counts estimated chat size, so it doesn't bound the whole process. On the demo-only site, chats are only the small demo, so 512 MB is plenty.
+- Measuring real process memory under load on a 512 MB instance. The 192 MB cap only counts estimated chat size, so it doesn't bound the whole process. Before encryption, the server reached about 1 GB after parsing 64 chats back to back. The new uploads skip HTML parsing, so they should use far less.
 - Scaling past one instance, using sticky sessions or a shared in-memory store. A shared store must not write chats to disk.
 
 ### Privacy
 
-Held off while the game is in development, because readable data makes debugging easier. Revisit before it goes live.
+Browser encryption is built. See [Going live](#going-live). What's left:
 
-The server currently receives the chosen chat's full pages: every message's text, sender and reactor names, timestamps, reactions, links, system lines and media file names. It also sees the player's IP address. Photos, GIFs and videos never leave the browser.
-
-**Pseudonyms**
-
-- The browser replaces each sender and reactor with "Person 1", "Person 2" and so on before upload, keeps the mapping, and shows real names again.
-- This only partly anonymises a chat. Names inside message text, such as mentions, nicknames and system lines, can't be reliably removed.
-
-**Encrypting message text in the browser**
-
-- Selecting messages and building "Who said this?" questions need only metadata: senders, timestamps, ordering, reaction counts and whether a message is a system line. The text itself isn't needed.
-- The browser would parse the chat, encrypt each message's text with its own key and send only metadata plus encrypted text. Questions come back with encrypted text, and the browser decrypts them for display.
-- The server would still learn the number of people, when messages were sent, reaction counts and roughly how long each message is. Padding text to fixed length buckets would blur the lengths.
-- Word-based questions, such as "who used [word] most?", would have to run in the browser, or use keyed hashes of words, which still reveal how often each word appears.
-- Sentiment analysis on the server would conflict with this. It would need to run in the browser, or need the player's explicit consent to send text.
-- Moving parsing to the browser means the server must check the metadata it receives, because it can no longer parse the pages itself.
-
-**Keys the server never sees**
-
-- Generate the key in the browser with Web Crypto (`crypto.subtle.generateKey` with `extractable: false`), so page code can use it but can't read it out. Keep it in IndexedDB so it survives a refresh.
-- For multiplayer, share the key in the link's fragment, such as `/play#key=...`. Browsers never send the part after `#` to the server.
-
-**Limits of any guarantee**
-
-- Encryption protects against a hacked server, accidental logging and memory dumps, but not against a dishonest operator. The same server delivers the page's JavaScript and could serve a version that leaks the key.
-- That risk can be narrowed by making the code open source, hosting the front end separately from the API, for example as a static site built from the public repository, and letting players check in the browser's network tab what's sent.
-- A stronger guarantee would need confidential computing with remote attestation, such as AWS Nitro Enclaves or Azure confidential containers.
+- **Word-based questions,** such as "who used [word] most?", must run in the browser, or use keyed hashes of words, which still reveal how often each word appears.
+- **Sentiment analysis** would run in the browser, or need the player's consent to send readable text, for that game only.
+- **Hiding message lengths:** pad sealed text to length buckets, so the server can't estimate how long each message is.
+- **Large chats:** parse and seal in a web worker, so they don't pause the page.
+- **Hosting the front end separately,** for example as a static site built from the public repository, so the API server can't change the code it runs.
+- **Confidential computing** with remote attestation, such as AWS Nitro Enclaves or Azure confidential containers, for a guarantee that doesn't depend on trusting the operator.

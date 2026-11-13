@@ -24,8 +24,6 @@ WORKDIR /app
 COPY --from=server /app ./
 COPY --from=client /client/dist ./wwwroot
 
-# Safe by default: a hosted copy only plays the demo unless this is turned off on purpose.
-ENV Quiz__DemoOnly=true
 # Cloud Run passes the port in PORT. This is the port used when nothing passes one.
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080

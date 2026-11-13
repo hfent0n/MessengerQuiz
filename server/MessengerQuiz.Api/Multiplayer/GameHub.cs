@@ -12,7 +12,7 @@ public sealed class GameHub(GameService games) : Hub
 
     public Task<string?> Start() => games.StartAsync(Context.ConnectionId);
 
-    public Task<string?> Answer(string option) => games.AnswerAsync(Context.ConnectionId, option);
+    public Task<string?> Answer(int option) => games.AnswerAsync(Context.ConnectionId, option);
 
     public Task<string?> Ready() => games.ReadyAsync(Context.ConnectionId);
 

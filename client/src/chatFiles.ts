@@ -10,7 +10,7 @@ export type ChatSource = {
   folder: string
   pages: ExportFile[]
   // Photos, GIFs and videos, keyed by the path inside the chat folder, such as "photos/123.jpg", which is how the
-  // server refers to them. The files stay in the browser. Only their names are sent.
+  // pages refer to them. The files never leave the browser.
   media: Map<string, ExportFile>
 }
 

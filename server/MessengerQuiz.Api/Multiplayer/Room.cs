@@ -12,7 +12,7 @@ public enum JoinOutcome { Joined, AlreadyStarted, Full, NameTaken }
 public sealed class Room(string code, string chatId, ChatSession session, TimeSpan timeLimit, int maxPlayers)
 {
     private readonly List<Player> _players = [];
-    private readonly HashSet<string> _askedMessageIds = [];
+    private readonly HashSet<int> _askedPositions = [];
     private readonly Dictionary<string, PlayerAnswer> _answers = [];
     private readonly HashSet<string> _ready = [];
     private IReadOnlyList<WhoSaidThisQuestion> _questions = [];
@@ -39,7 +39,7 @@ public sealed class Room(string code, string chatId, ChatSession session, TimeSp
 
     public IReadOnlyList<Player> Players => _players;
     public IReadOnlyList<WhoSaidThisQuestion> Questions => _questions;
-    public IReadOnlySet<string> AskedMessageIds => _askedMessageIds;
+    public IReadOnlySet<int> AskedPositions => _askedPositions;
     public IReadOnlyDictionary<string, PlayerAnswer> Answers => _answers;
     public IReadOnlySet<string> ReadyPlayerIds => _ready;
 
@@ -74,10 +74,10 @@ public sealed class Room(string code, string chatId, ChatSession session, TimeSp
         player.IsHost && (Stage is RoomStage.Lobby or RoomStage.Finished) && _players.Count >= 2;
 
     // Also used for a rematch, which keeps the players and resets their scores.
-    public void Start(IReadOnlyList<WhoSaidThisQuestion> questions, IEnumerable<string> usedMessageIds, DateTimeOffset now)
+    public void Start(IReadOnlyList<WhoSaidThisQuestion> questions, IEnumerable<int> usedPositions, DateTimeOffset now)
     {
         _questions = questions;
-        _askedMessageIds.UnionWith(usedMessageIds);
+        _askedPositions.UnionWith(usedPositions);
         foreach (var player in _players)
         {
             player.Score = 0;
@@ -89,7 +89,7 @@ public sealed class Room(string code, string chatId, ChatSession session, TimeSp
     }
 
     // Returns false when the answer isn't accepted: it's late, repeated, or not one of the options.
-    public bool Answer(Player player, string option, DateTimeOffset now, TimeSpan grace)
+    public bool Answer(Player player, int option, DateTimeOffset now, TimeSpan grace)
     {
         var question = CurrentQuestion;
         if (Stage != RoomStage.Question || question is null || _answers.ContainsKey(player.Id)

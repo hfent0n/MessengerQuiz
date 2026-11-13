@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace MessengerQuiz.Api.Multiplayer;
 
@@ -14,6 +15,10 @@ public sealed class RoomStore
     public static string NewCode() => RandomNumberGenerator.GetString(CodeAlphabet, CodeLength);
 
     public static string NewToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+
+    public static bool TokensMatch(string expected, string? actual) =>
+        actual is not null
+        && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(actual));
 
     public static string NewPlayerId() => RandomNumberGenerator.GetString(CodeAlphabet, 8);
 

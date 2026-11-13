@@ -8,7 +8,7 @@ type Connection = {
   error: string | null
   reconnecting: boolean
   // Sends an action. Resolves to an error to show, or null.
-  send: (method: 'Start' | 'Answer' | 'Ready', ...args: string[]) => Promise<string | null>
+  send: (method: 'Start' | 'Answer' | 'Ready', ...args: number[]) => Promise<string | null>
 }
 
 // Keeps a live connection to one game, and reconnects to the same seat if the connection drops.
@@ -57,7 +57,7 @@ export function useRoom(code: string, token: string): Connection {
     }
   }, [code, token])
 
-  const send = useCallback(async (method: 'Start' | 'Answer' | 'Ready', ...args: string[]) => {
+  const send = useCallback(async (method: 'Start' | 'Answer' | 'Ready', ...args: number[]) => {
     const connection = hub.current
     if (!connection) return 'Not connected yet.'
     try {

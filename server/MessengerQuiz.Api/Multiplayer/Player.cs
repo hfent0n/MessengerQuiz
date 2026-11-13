@@ -20,4 +20,5 @@ public sealed class Player(string id, string token, string name, bool isHost)
     public TimeSpan AnswerTime { get; set; }
 }
 
-public sealed record PlayerAnswer(string Option, int Points, TimeSpan Elapsed);
+// Option is the number of the person picked.
+public sealed record PlayerAnswer(int Option, int Points, TimeSpan Elapsed);

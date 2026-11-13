@@ -54,12 +54,16 @@ public class MultiplayerApiTests : IAsyncLifetime
             Assert.False(question.GetProperty("question").TryGetProperty("answer", out _));
             Assert.Equal(JsonValueKind.Null, question.GetProperty("reveal").ValueKind);
 
-            var options = question.GetProperty("question").GetProperty("options").EnumerateArray().Select(option => option.GetString()!).ToList();
+            var options = Options(question);
+            // Players get the sealed box and people's numbers. The key in the game link opens them.
+            Assert.Equal(TestChats.Sealed("people"), question.GetProperty("people").GetString());
+            Assert.StartsWith("p", TestChats.Label(question.GetProperty("question").GetProperty("sealed").GetString()!));
+
             Assert.Null(await host.Hub.InvokeAsync<string?>("Answer", options[0]));
             Assert.Null(await guest.Hub.InvokeAsync<string?>("Answer", options[1]));
 
             var reveal = await host.WaitFor(view => Stage(view) == "reveal");
-            Assert.Contains(reveal.GetProperty("reveal").GetProperty("answer").GetString(), options);
+            Assert.Contains(reveal.GetProperty("reveal").GetProperty("answer").GetInt32(), options);
 
             await host.Hub.InvokeAsync<string?>("Ready");
             await guest.Hub.InvokeAsync<string?>("Ready");
@@ -167,7 +171,7 @@ public class MultiplayerApiTests : IAsyncLifetime
     [Fact]
     public async Task OnlyOfferedTimeLimitsAreAllowed()
     {
-        var chatId = await StartDemo();
+        var chatId = await UploadChat();
 
         var response = await PostRoom(chatId, "Host", timeLimitSeconds: 7);
 
@@ -244,7 +248,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         for (var number = 1; number <= 10; number++)
         {
             var view = await host.WaitFor(view => Stage(view) == "question" && view.GetProperty("questionNumber").GetInt32() == number);
-            texts.Add(view.GetProperty("question").GetProperty("text").GetString()!);
+            texts.Add(TestChats.Label(view.GetProperty("question").GetProperty("sealed").GetString()!));
             _time.Advance(TimeSpan.FromSeconds(21));
             await host.WaitFor(view => Stage(view) == "reveal" && view.GetProperty("questionNumber").GetInt32() == number);
             await host.Hub.InvokeAsync<string?>("Ready");
@@ -267,7 +271,7 @@ public class MultiplayerApiTests : IAsyncLifetime
 
     private async Task<(TestPlayer Host, string Code, string ChatId)> CreateRoom(string name)
     {
-        var chatId = await StartDemo();
+        var chatId = await UploadChat();
         var response = await PostRoom(chatId, name, timeLimitSeconds: 20);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
@@ -288,9 +292,10 @@ public class MultiplayerApiTests : IAsyncLifetime
         return player;
     }
 
-    private async Task<string> StartDemo()
+    // Enough text messages for two games.
+    private async Task<string> UploadChat()
     {
-        var response = await _factory.CreateClient().PostAsync("/api/chats/demo", null);
+        var response = await _factory.CreateClient().PostAsync("/api/chats", TestChats.Content(TestChats.QuizzableUpload(people: 4, messagesPerPerson: 10)));
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         return body.GetProperty("chatId").GetString()!;
     }
@@ -330,8 +335,9 @@ public class MultiplayerApiTests : IAsyncLifetime
 
     private static string Stage(JsonElement view) => view.GetProperty("stage").GetString()!;
 
-    private static List<string> Options(JsonElement view) =>
-        view.GetProperty("question").GetProperty("options").EnumerateArray().Select(option => option.GetString()!).ToList();
+    // People's numbers.
+    private static List<int> Options(JsonElement view) =>
+        view.GetProperty("question").GetProperty("options").EnumerateArray().Select(option => option.GetInt32()).ToList();
 
     private static int Score(JsonElement view, string playerId) => view.GetProperty("players").EnumerateArray()
         .Single(player => player.GetProperty("id").GetString() == playerId).GetProperty("score").GetInt32();

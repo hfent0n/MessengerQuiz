@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { ActiveChat } from '../activeChat'
 import NameField from '../components/NameField'
+import { chatKeyText, saveRoomKey } from '../chat/keys'
 import { createRoom, DEFAULT_TIME_LIMIT, isValidName, saveRoomToken, TIME_LIMITS } from '../rooms'
 import { navigate, playPath } from '../routes'
 
@@ -25,8 +26,11 @@ export default function HostSetupScreen({ chat, onBack }: Props) {
     setError(null)
     setCreating(true)
     try {
+      const key = chatKeyText(chat.chatId)
+      if (!key) throw new Error("This chat's key is missing. Choose the chat again.")
       const room = await createRoom(chat.chatId, name, timeLimit)
       saveRoomToken(room.code, room.playerToken)
+      saveRoomKey(room.code, key)
       navigate(playPath(room.code))
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Something went wrong. Try again.')

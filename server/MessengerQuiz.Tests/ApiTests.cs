@@ -1,13 +1,12 @@
-using System.IO.Compression;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
-using System.Text.Json;
 using MessengerQuiz.Api.Questions;
+using MessengerQuiz.Api.Uploads;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
+using static MessengerQuiz.Tests.TestChats;
 
 namespace MessengerQuiz.Tests;
 
@@ -23,153 +22,83 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
     {
         var client = _factory.CreateClient();
 
-        var chat = await Upload(client, FakeExport.QuizzablePage("Friends"));
+        var chat = await Send(client, QuizzableUpload(people: 3));
         var question = await GetQuestion(client, chat.ChatId);
 
-        Assert.Equal("Friends", chat.Title);
-        Assert.Equal(18, chat.MessageCount);
+        Assert.Equal(18, chat.EligibleCount);
+        Assert.Equal(3, question.Options.Count);
         Assert.Contains(question.Answer, question.Options);
-        Assert.StartsWith(question.Answer, question.Text);
+        Assert.StartsWith($"p{question.Answer}-", Label(question.Sealed));
+    }
+
+    [Fact]
+    public async Task SealedBoxesComeBackExactlyAsUploaded()
+    {
+        var client = _factory.CreateClient();
+        var upload = QuizzableUpload();
+
+        var chat = await Send(client, upload);
+        var question = await GetQuestion(client, chat.ChatId);
+
+        Assert.Equal(upload.Messages![question.Position].Sealed, question.Sealed);
     }
 
     [Fact]
     public async Task QuestionsIncludeEarlierMessagesFromTheSameSender()
     {
         var client = _factory.CreateClient();
-        // Newest first, as in the export. Ana sends two messages in a row and Ben replies.
+        // Person 0 sends a run of three, and only the last can be a question. Person 1 replies.
         var messages = Enumerable.Range(0, 12).SelectMany(index => new[]
         {
-            FakeExport.Message("Ben", $"Ben replied with a long enough message, number {index}.", $"Mar 1, 2023 {index + 1}:02:00pm"),
-            FakeExport.Message("Ana", $"Ana followed up with a long enough message {index}.", $"Mar 1, 2023 {index + 1}:01:00pm", "😆Ben", "😮Cal"),
-            FakeExport.Message("Ana", $"Ana opened with context {index}", $"Mar 1, 2023 {index + 1}:00:00pm"),
-        }).Reverse().ToArray();
-        var chat = await Upload(client, FakeExport.Page("Context", messages));
+            Uploaded(0, $"first {index}", minute: index * 10, quizzable: false),
+            Uploaded(0, $"photo {index}", minute: index * 10 + 1, quizzable: false, media: 0),
+            Uploaded(0, $"question {index}", minute: index * 10 + 2),
+            Uploaded(1, $"reply {index}", minute: index * 10 + 3),
+        });
+        var chat = await Send(client, Upload(2, messages));
 
         var question = await GetQuestion(client, chat.ChatId);
-        while (question.Answer != "Ana")
+        while (question.Answer != 0)
         {
             question = await GetQuestion(client, chat.ChatId);
         }
 
-        Assert.StartsWith("Ana followed up", question.Text);
-        Assert.StartsWith("Ana opened with context", Assert.Single(question.Context).Text);
+        var index = Label(question.Sealed).Split(' ').Last();
+        Assert.Equal([$"first {index}", $"photo {index}"], question.Context.Select(context => Label(context.Sealed)));
+        Assert.Equal([question.Position - 2, question.Position - 1], question.Context.Select(context => context.Position));
     }
 
     [Fact]
-    public async Task QuestionsIncludeSeveralContextMessagesInOrder()
+    public async Task MediaQuestionsSayHowManyItemsTheyHave()
     {
         var client = _factory.CreateClient();
-        // Ana's context lines are too short to be questions, so her only questions have three messages of context.
-        var messages = Enumerable.Range(0, 12).SelectMany(index => new[]
-        {
-            FakeExport.Message("Ana", $"First {index}", $"Mar 1, 2023 {index + 1}:00:00pm"),
-            FakeExport.PhotoAt("Ana", $"Mar 1, 2023 {index + 1}:01:00pm"),
-            FakeExport.Message("Ana", $"Third {index}", $"Mar 1, 2023 {index + 1}:02:00pm"),
-            FakeExport.Message("Ana", $"Ana finished with a long enough message {index}.", $"Mar 1, 2023 {index + 1}:03:00pm", "😆Ben"),
-            FakeExport.Message("Ben", $"Ben replied with a long enough message, number {index}.", $"Mar 1, 2023 {index + 1}:04:00pm"),
-        }).Reverse().ToArray();
-        var chat = await Upload(client, FakeExport.Page("Context", messages));
+        var messages = QuizzableUpload().Messages!.Append(Uploaded(1, "a photo", reactions: 50, media: 1));
+        var chat = await Send(client, Upload(3, messages));
 
-        var question = await GetQuestion(client, chat.ChatId);
-        while (question.Answer != "Ana")
-        {
-            question = await GetQuestion(client, chat.ChatId);
-        }
-
-        var index = question.Text.Split(' ').Last().TrimEnd('.');
-        // The photo wasn't listed as available, so it stays a placeholder.
-        Assert.Equal(
-            [($"First {index}", false, 0), ("", true, 0), ($"Third {index}", false, 0)],
-            question.Context.Select(context => (context.Text, context.HasMedia, context.Media.Count)));
-    }
-
-    [Fact]
-    public async Task PhotoQuestionsOnlyUseAvailablePhotos()
-    {
-        var client = _factory.CreateClient();
-        var messages = Enumerable.Range(0, 12).SelectMany(index => new[]
-        {
-            FakeExport.PhotoAt("Ana", $"Mar 1, 2023 {index + 1}:00:00pm", $"{index}.jpg", ["😆Ben"]),
-            FakeExport.Message("Ben", $"Ben replied with a long enough message, number {index}.", $"Mar 1, 2023 {index + 1}:30:00pm"),
-        }).Reverse().ToArray();
-        var available = Enumerable.Range(0, 6).Select(index => $"photos/{index}.jpg").ToList();
-        var chat = await Upload(client, FakeExport.Page("Photos", messages), JsonSerializer.Serialize(available));
-
-        var questions = new List<WhoSaidThisQuestion>();
-        for (var index = 0; index < chat.EligibleCount; index++)
-        {
-            questions.Add(await GetQuestion(client, chat.ChatId));
-        }
-
-        var photoQuestions = questions.Where(question => question.Media.Count > 0).ToList();
-        Assert.Equal(6, photoQuestions.Count);
-        Assert.All(photoQuestions, question => Assert.Contains(Assert.Single(question.Media), available));
-        Assert.All(photoQuestions, question => Assert.Equal("Ana", question.Answer));
-    }
-
-    [Fact]
-    public async Task GifsAndVideosCanBeQuestions()
-    {
-        var client = _factory.CreateClient();
-        var messages = OtherPeoplesMessages()
-            .Append(FakeExport.Gif("Dee", "1.gif"))
-            .Append(FakeExport.Video("Eve", "2.mp4"))
-            .ToArray();
-        var chat = await Upload(
-            client, FakeExport.Page("Media", messages), JsonSerializer.Serialize(new[] { "gifs/1.gif", "videos/2.mp4" }));
-
-        // Context uses up some messages, so ask until the chat runs out.
-        var media = new Dictionary<string, string>();
+        var media = new List<(string, int)>();
         HttpResponseMessage response;
         while ((response = await SendQuestionRequest(client, chat.ChatId)).StatusCode == HttpStatusCode.OK)
         {
             var question = (await response.Content.ReadFromJsonAsync<WhoSaidThisQuestion>())!;
-            if (question.Media.Count > 0)
+            if (question.MediaCount > 0)
             {
-                media[Assert.Single(question.Media)] = question.Answer;
+                media.Add((Label(question.Sealed), question.Answer));
             }
         }
 
-        Assert.Equal(new Dictionary<string, string> { ["gifs/1.gif"] = "Dee", ["videos/2.mp4"] = "Eve" }, media);
-    }
-
-    [Fact]
-    public async Task WithoutAPhotoListPhotosAreNotQuestions()
-    {
-        var client = _factory.CreateClient();
-        var messages = Enumerable.Range(0, 12).SelectMany(index => new[]
-        {
-            FakeExport.PhotoAt("Ana", $"Mar 1, 2023 {index + 1}:00:00pm", $"{index}.jpg", ["😆Ben"]),
-            FakeExport.Message("Ana", $"Ana wrote a long enough message, number {index}.", $"Mar 1, 2023 {index + 1}:20:00pm"),
-            FakeExport.Message("Ben", $"Ben replied with a long enough message, number {index}.", $"Mar 1, 2023 {index + 1}:40:00pm"),
-        }).Reverse().ToArray();
-        var chat = await Upload(client, FakeExport.Page("Photos", messages));
-
-        Assert.Equal(24, chat.EligibleCount);
-    }
-
-    [Theory]
-    [InlineData("not json")]
-    [InlineData("{\"photo\": 1}")]
-    public async Task RejectsAnUnreadablePhotoList(string photos)
-    {
-        var response = await Post(_factory.CreateClient(), FakeExport.QuizzablePage(), photos);
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal([("a photo", 1)], media);
     }
 
     [Fact]
     public async Task OneChatIdNeverReachesAnotherChat()
     {
         var client = _factory.CreateClient();
-        var first = await Upload(client, FakeExport.QuizzablePage("First"));
-        var second = await Upload(client, FakeExport.Page("Second", OtherPeoplesMessages()));
+        var first = await Send(client, QuizzableUpload());
+        var second = await Send(client, Upload(3, QuizzableUpload().Messages!.Select(message =>
+            message with { Sealed = Sealed("second chat") })));
 
-        var firstQuestion = await GetQuestion(client, first.ChatId);
-        var secondQuestion = await GetQuestion(client, second.ChatId);
-
-        Assert.DoesNotContain("Zed", firstQuestion.Options);
-        Assert.DoesNotContain("Ana", secondQuestion.Options);
+        Assert.StartsWith("p", Label((await GetQuestion(client, first.ChatId)).Sealed));
+        Assert.Equal("second chat", Label((await GetQuestion(client, second.ChatId)).Sealed));
     }
 
     [Theory]
@@ -178,39 +107,48 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
     [InlineData("not-a-real-chat")]
     public async Task MissingOrUnknownChatIdIsRejected(string? chatId)
     {
-        var client = _factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, QuestionUrl);
         if (chatId is not null)
         {
             request.Headers.Add("X-Chat-Id", chatId);
         }
 
-        var response = await client.SendAsync(request);
+        var response = await _factory.CreateClient().SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChatIdsAreLongAndRandom()
+    {
+        var client = _factory.CreateClient();
+
+        var first = await Send(client, QuizzableUpload());
+        var second = await Send(client, QuizzableUpload());
+
+        Assert.Matches("^[0-9a-f]{64}$", first.ChatId);
+        Assert.NotEqual(first.ChatId, second.ChatId);
     }
 
     [Fact]
     public async Task ReturnsNoContentWhenQuestionsRunOut()
     {
         var client = _factory.CreateClient();
-        var chat = await Upload(client, FakeExport.QuizzablePage());
+        var chat = await Send(client, QuizzableUpload());
 
         for (var index = 0; index < chat.EligibleCount; index++)
         {
             await GetQuestion(client, chat.ChatId);
         }
 
-        var response = await SendQuestionRequest(client, chat.ChatId);
-
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await SendQuestionRequest(client, chat.ChatId)).StatusCode);
     }
 
     [Fact]
     public async Task DeleteWipesTheChat()
     {
         var client = _factory.CreateClient();
-        var chat = await Upload(client, FakeExport.QuizzablePage());
+        var chat = await Send(client, QuizzableUpload());
         using var request = new HttpRequestMessage(HttpMethod.Delete, "/api/chats/current");
         request.Headers.Add("X-Chat-Id", chat.ChatId);
 
@@ -222,28 +160,60 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
     }
 
     [Fact]
-    public async Task RejectsANonMessengerFile()
+    public async Task AcceptsPlainJsonAsWellAsGzip()
     {
-        var response = await Post(_factory.CreateClient(), "<html><body>Hello</body></html>");
+        var response = await _factory.CreateClient().PostAsync("/api/chats", Content(QuizzableUpload(), gzip: false));
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
-    [Fact]
-    public async Task RejectsARequestWithNoFiles()
+    public static TheoryData<string, ChatUpload> BrokenUploads()
     {
-        var response = await _factory.CreateClient().PostAsync("/api/chats", new MultipartFormDataContent
+        var good = QuizzableUpload();
+        var first = good.Messages![0];
+        return new()
         {
-            { new StringContent("value"), "field" },
-        });
+            { "no messages", good with { Messages = [] } },
+            { "no message list", good with { Messages = null } },
+            { "no people", good with { PersonCount = 0 } },
+            { "missing title", good with { Title = null } },
+            { "a sender who isn't in the chat", Replace(good, first with { Sender = 3 }) },
+            { "a negative sender", Replace(good, first with { Sender = -1 }) },
+            { "negative reactions", Replace(good, first with { Reactions = -1 }) },
+            { "a time before Messenger", Replace(good, first with { SentAt = 0 }) },
+            { "a box that isn't base64url", Replace(good, first with { Sealed = "not base64url!".PadRight(40, '!') }) },
+            { "a box too short to be sealed", Replace(good, first with { Sealed = "abc" }) },
+            { "a missing box", Replace(good, first with { Sealed = null }) },
+            { "a box that's too long", Replace(good, first with { Sealed = new string('a', 100_001) }) },
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(BrokenUploads))]
+    public async Task RejectsBrokenUploads(string problem, ChatUpload upload)
+    {
+        var response = await _factory.CreateClient().PostAsync("/api/chats", Content(upload));
+
+        Assert.True(response.StatusCode == HttpStatusCode.BadRequest, problem);
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("[1, 2, 3]")]
+    [InlineData("")]
+    public async Task RejectsBodiesThatArentAChat(string body)
+    {
+        var response = await _factory.CreateClient().PostAsync("/api/chats", new StringContent(body, Encoding.UTF8, "application/json"));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
-    public async Task RejectsANonFormRequest()
+    public async Task RejectsTooManyMessages()
     {
-        var response = await _factory.CreateClient().PostAsJsonAsync("/api/chats", new { });
+        var client = _factory.WithWebHostBuilder(builder => builder.UseSetting("Quiz:MaxMessages", "10")).CreateClient();
+
+        var response = await client.PostAsync("/api/chats", Content(QuizzableUpload()));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -251,19 +221,15 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
     [Fact]
     public async Task RejectsAChatWithOnlyOneSender()
     {
-        var messages = Enumerable.Range(0, 20)
-            .Select(index => FakeExport.Message("Ana", $"Ana wrote a long enough message, number {index}."))
-            .ToArray();
-
-        var response = await Post(_factory.CreateClient(), FakeExport.Page("Solo", messages));
+        var response = await Post(_factory.CreateClient(), Upload(1, Enumerable.Range(0, 20).Select(index => Uploaded(0, $"{index}"))));
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
     [Fact]
-    public async Task RejectsAChatWithTooFewMessages()
+    public async Task RejectsAChatWithTooFewQuestions()
     {
-        var response = await Post(_factory.CreateClient(), FakeExport.QuizzablePage(messagesPerSender: 1));
+        var response = await Post(_factory.CreateClient(), QuizzableUpload(messagesPerPerson: 1));
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -271,52 +237,20 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
     [Fact]
     public async Task RejectsAnOversizedUpload()
     {
-        var client = _factory
-            .WithWebHostBuilder(builder => builder.UseSetting("Quiz:MaxUploadBytes", "1024"))
-            .CreateClient();
+        var client = _factory.WithWebHostBuilder(builder => builder.UseSetting("Quiz:MaxUploadBytes", "256")).CreateClient();
 
-        var response = await Post(client, FakeExport.QuizzablePage());
+        var response = await Post(client, QuizzableUpload());
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
     }
 
     [Fact]
-    public async Task DemoChatsAreSeparateSessions()
+    public async Task RejectsGzipThatIsTooLargeOnceDecompressed()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.WithWebHostBuilder(builder => builder.UseSetting("Quiz:MaxChatBytes", "4096")).CreateClient();
 
-        var first = await client.PostAsync("/api/chats/demo", null);
-        var second = await client.PostAsync("/api/chats/demo", null);
-
-        Assert.Equal(HttpStatusCode.Created, first.StatusCode);
-        var firstChat = (await first.Content.ReadFromJsonAsync<ChatCreated>())!;
-        var secondChat = (await second.Content.ReadFromJsonAsync<ChatCreated>())!;
-        Assert.Equal("Flat 4B 🏠", firstChat.Title);
-        Assert.NotEqual(firstChat.ChatId, secondChat.ChatId);
-
-        var question = await GetQuestion(client, firstChat.ChatId);
-        Assert.Contains(question.Answer, question.Options);
-    }
-
-    [Fact]
-    public async Task AcceptsGzippedPages()
-    {
-        var response = await Post(_factory.CreateClient(), FakeExport.QuizzablePage("Zipped"), gzip: true);
-
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.Equal("Zipped", (await response.Content.ReadFromJsonAsync<ChatCreated>())!.Title);
-    }
-
-    [Fact]
-    public async Task RejectsGzippedPagesThatAreTooLargeOnceDecompressed()
-    {
-        var client = _factory
-            .WithWebHostBuilder(builder => builder.UseSetting("Quiz:MaxPagesBytes", "1024"))
-            .CreateClient();
-
-        // Repetitive HTML compresses well, so the upload itself stays small.
-        var page = FakeExport.QuizzablePage(messagesPerSender: 200);
-        var response = await Post(client, page, gzip: true);
+        // Repetitive JSON compresses well, so the upload itself stays small.
+        var response = await Post(client, QuizzableUpload(messagesPerPerson: 200));
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
     }
@@ -324,11 +258,9 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
     [Fact]
     public async Task RejectsBrokenGzipData()
     {
-        var client = _factory.CreateClient();
         var content = new ByteArrayContent([0x1f, 0x8b, 1, 2, 3, 4]);
-        var form = new MultipartFormDataContent { { content, "files", "chat/message_1.html" } };
 
-        var response = await client.PostAsync("/api/chats", form);
+        var response = await _factory.CreateClient().PostAsync("/api/chats", content);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -336,77 +268,44 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
     [Fact]
     public async Task RateLimitsUploadsPerIp()
     {
-        var client = _factory
-            .WithWebHostBuilder(builder => builder.UseSetting("Quiz:UploadsPerMinutePerIp", "2"))
-            .CreateClient();
-        var page = FakeExport.QuizzablePage();
+        var client = _factory.WithWebHostBuilder(builder => builder.UseSetting("Quiz:UploadsPerMinutePerIp", "2")).CreateClient();
 
-        Assert.Equal(HttpStatusCode.Created, (await Post(client, page)).StatusCode);
-        Assert.Equal(HttpStatusCode.Created, (await Post(client, page)).StatusCode);
-        Assert.Equal(HttpStatusCode.TooManyRequests, (await Post(client, page)).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await Post(client, QuizzableUpload())).StatusCode);
+        Assert.Equal(HttpStatusCode.Created, (await Post(client, QuizzableUpload())).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await Post(client, QuizzableUpload())).StatusCode);
     }
 
     [Fact]
     public async Task ReturnsServiceUnavailableWhenTheMemoryCapIsReached()
     {
-        var client = _factory
-            .WithWebHostBuilder(builder => builder.UseSetting("Quiz:ChatMemoryCapBytes", "1"))
-            .CreateClient();
+        var client = _factory.WithWebHostBuilder(builder => builder.UseSetting("Quiz:ChatMemoryCapBytes", "1")).CreateClient();
 
-        var response = await Post(client, FakeExport.QuizzablePage());
+        var response = await Post(client, QuizzableUpload());
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
     }
 
     [Fact]
-    public async Task ErrorsNeverEchoChatContent()
+    public async Task ErrorsNeverEchoWhatWasUploaded()
     {
-        const string secret = "my-private-message-text";
-        var page = FakeExport.Page("Solo", FakeExport.Message("Ana", secret));
+        const string secret = "zzz-uploaded-value-zzz";
+        var upload = QuizzableUpload() with { Title = secret };
 
-        var response = await Post(_factory.CreateClient(), page);
+        var response = await Post(_factory.CreateClient(), upload);
         var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>();
 
         Assert.DoesNotContain(secret, problem!.Detail);
     }
 
-    private static string[] OtherPeoplesMessages()
+    private static ChatUpload Replace(ChatUpload upload, UploadedMessage first) =>
+        upload with { Messages = [first, .. upload.Messages!.Skip(1)] };
+
+    private static Task<HttpResponseMessage> Post(HttpClient client, ChatUpload upload) =>
+        client.PostAsync("/api/chats", Content(upload));
+
+    private static async Task<ChatCreated> Send(HttpClient client, ChatUpload upload)
     {
-        return new[] { "Zed", "Yan", "Xia" }.SelectMany(sender => Enumerable
-            .Range(0, 6)
-            .Select(index => FakeExport.Message(sender, $"{sender} wrote a long enough message, number {index}.", reactions: "😆Zed")))
-            .ToArray();
-    }
-
-    private static async Task<HttpResponseMessage> Post(
-        HttpClient client, string html, string? photos = null, bool gzip = false)
-    {
-        var bytes = Encoding.UTF8.GetBytes(html);
-        var content = new ByteArrayContent(gzip ? Gzip(bytes) : bytes);
-        content.Headers.ContentType = new MediaTypeHeaderValue(gzip ? "application/gzip" : "text/html");
-        var form = new MultipartFormDataContent { { content, "files", "chat/message_1.html" } };
-        if (photos is not null)
-        {
-            form.Add(new StringContent(photos), "media");
-        }
-
-        return await client.PostAsync("/api/chats", form);
-    }
-
-    private static byte[] Gzip(byte[] bytes)
-    {
-        using var output = new MemoryStream();
-        using (var gzip = new GZipStream(output, CompressionLevel.Optimal))
-        {
-            gzip.Write(bytes);
-        }
-
-        return output.ToArray();
-    }
-
-    private static async Task<ChatCreated> Upload(HttpClient client, string html, string? photos = null)
-    {
-        var response = await Post(client, html, photos);
+        var response = await Post(client, upload);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<ChatCreated>())!;
     }
@@ -425,10 +324,5 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
         return (await response.Content.ReadFromJsonAsync<WhoSaidThisQuestion>())!;
     }
 
-    private sealed record ChatCreated(
-        string ChatId,
-        string Title,
-        IReadOnlyList<string> Participants,
-        int MessageCount,
-        int EligibleCount);
+    private sealed record ChatCreated(string ChatId, int EligibleCount);
 }

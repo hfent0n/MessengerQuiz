@@ -7,6 +7,9 @@ namespace MessengerQuiz.Api.Multiplayer;
 public sealed record RoomView(
     string Code,
     int Version,
+    // The chat's sealed title and people's names. Players open them with the key from the game link.
+    string Title,
+    string People,
     RoomStage Stage,
     int TimeLimitSeconds,
     string YouId,
@@ -49,6 +52,8 @@ public sealed record RoomView(
         return new RoomView(
             room.Code,
             room.Version,
+            room.Session.Chat.Title,
+            room.Session.Chat.People,
             room.Stage,
             (int)room.TimeLimit.TotalSeconds,
             viewer.Id,
@@ -74,17 +79,19 @@ public sealed record PlayerView(
 
 // No answer here. Players' clocks differ, so the time left is sent instead of the deadline.
 public sealed record QuestionView(
-    string Text,
+    int Position,
+    string Sealed,
     IReadOnlyList<ContextMessage> Context,
-    IReadOnlyList<string> Options,
+    IReadOnlyList<int> Options,
     int RemainingMilliseconds,
-    string? YourAnswer)
+    int? YourAnswer)
 {
     public static QuestionView For(Room room, WhoSaidThisQuestion question, Player viewer, DateTimeOffset now)
     {
         var remaining = room.Stage == RoomStage.Question ? Math.Max(0, (room.Deadline - now).TotalMilliseconds) : 0;
         return new QuestionView(
-            question.Text,
+            question.Position,
+            question.Sealed,
             question.Context,
             question.Options,
             (int)remaining,
@@ -92,7 +99,7 @@ public sealed record QuestionView(
     }
 }
 
-public sealed record RevealView(string Answer, int Reactions, IReadOnlyList<PickView> Picks)
+public sealed record RevealView(int Answer, int Reactions, IReadOnlyList<PickView> Picks)
 {
     public static RevealView For(Room room, WhoSaidThisQuestion question) => new(
         question.Answer,
@@ -104,4 +111,4 @@ public sealed record RevealView(string Answer, int Reactions, IReadOnlyList<Pick
             .ToList());
 }
 
-public sealed record PickView(string PlayerId, string? Option, int Points);
+public sealed record PickView(string PlayerId, int? Option, int Points);

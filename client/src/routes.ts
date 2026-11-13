@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
-// The app has two kinds of address: the home screen, and a multiplayer game at /play/<code>.
-export type Route = { kind: 'home' } | { kind: 'play'; code: string }
+// The app's addresses: the home screen, the privacy page, and a multiplayer game at /play/<code>.
+export type Route = { kind: 'home' } | { kind: 'privacy' } | { kind: 'play'; code: string }
 
 const NAVIGATED = 'messenger-quiz-navigated'
 
@@ -20,6 +20,7 @@ export function playPath(code: string): string {
 }
 
 export function parseRoute(path: string): Route {
+  if (/^\/privacy\/?$/.test(path)) return { kind: 'privacy' }
   const match = /^\/play\/([a-z0-9]+)\/?$/i.exec(path)
   return match ? { kind: 'play', code: match[1].toLowerCase() } : { kind: 'home' }
 }

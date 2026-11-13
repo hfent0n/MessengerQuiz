@@ -119,7 +119,8 @@ public sealed class GameService : IDisposable
     public async Task<string?> ConnectAsync(string code, string token, string connectionId)
     {
         var room = _rooms.Find(code);
-        var player = room?.Players.FirstOrDefault(candidate => candidate.Token == token);
+        // Compared in constant time, so response times don't reveal how much of a guessed token was right.
+        var player = room?.Players.FirstOrDefault(candidate => RoomStore.TokensMatch(candidate.Token, token));
         if (room is null || player is null)
         {
             return "This game has ended or the link is wrong.";
@@ -181,7 +182,7 @@ public sealed class GameService : IDisposable
         return null;
     });
 
-    public Task<string?> AnswerAsync(string connectionId, string option) => ActAsync(connectionId, (room, player) =>
+    public Task<string?> AnswerAsync(string connectionId, int option) => ActAsync(connectionId, (room, player) =>
         room.Answer(player, option, Now, _options.AnswerGrace) ? null : "That answer wasn't accepted.");
 
     public Task<string?> ReadyAsync(string connectionId) => ActAsync(connectionId, (room, player) =>
@@ -226,26 +227,25 @@ public sealed class GameService : IDisposable
         return error;
     }
 
-    // The same selection as single player, without media, which only the host has. Context with media shows as a
-    // placeholder. Messages asked in an earlier game in this room aren't used again.
-    private (List<WhoSaidThisQuestion> Questions, List<string> Used) PickQuestions(Room room)
+    // The same selection as single player, without media, which only the host has. Players' browsers show media in
+    // context as a placeholder. Messages asked in an earlier game in this room aren't used again.
+    private (List<WhoSaidThisQuestion> Questions, List<int> Used) PickQuestions(Room room)
     {
         var chat = room.Session.Chat;
         var candidates = room.Session.Eligible
-            .Where(message => message.Media.Count == 0 && !room.AskedMessageIds.Contains(message.Id))
+            .Where(message => message.MediaCount == 0 && !room.AskedPositions.Contains(message.Position))
             .ToList();
         var questions = new List<WhoSaidThisQuestion>();
-        var used = new List<string>();
+        var used = new List<int>();
 
         while (questions.Count < _options.QuestionsPerGame
             && MessageSelector.PickBalanced(candidates, Random.Shared) is { } pick)
         {
-            var context = _selector.PrecedingContext(chat, room.Session.PositionOf(pick));
-            var question = WhoSaidThisGenerator.Create(chat, pick, context);
-            questions.Add(question with { Context = question.Context.Select(item => item with { Media = [] }).ToList() });
+            var context = _selector.PrecedingContext(chat, pick.Position);
+            questions.Add(WhoSaidThisGenerator.Create(chat, pick, context));
 
-            var shown = context.Select(message => message.Id).Append(pick.Id).ToHashSet();
-            candidates.RemoveAll(message => shown.Contains(message.Id));
+            var shown = context.Select(message => message.Position).Append(pick.Position).ToHashSet();
+            candidates.RemoveAll(message => shown.Contains(message.Position));
             used.AddRange(shown);
         }
 

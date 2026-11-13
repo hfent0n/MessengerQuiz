@@ -1,7 +1,6 @@
-import type { ContextMessage } from './api'
 import { mediaKind } from './chatFiles'
 
-export function questionPrompt({ text, media, context }: { text: string; media: string[]; context: ContextMessage[] }): string {
+export function questionPrompt({ text, media, context }: { text: string; media: string[]; context: unknown[] }): string {
   if (context.length > 0) return 'Who sent these messages?'
   if (media.length === 0 || text) return 'Who said this?'
   return `Who sent this ${PROMPT_NAMES[mediaKind(media[0])]}?`

@@ -1,8 +1,10 @@
-import { useEffect, useState, type ChangeEvent, type InputHTMLAttributes } from 'react'
+import { useState, type ChangeEvent, type InputHTMLAttributes } from 'react'
 import type { ActiveChat } from '../activeChat'
-import { getConfig, startDemo, uploadChat } from '../api'
+import { uploadChat } from '../api'
+import { demoChat, demoMedia } from '../chat/demoChat'
+import { ChatParseError, parseChat, type Chat } from '../chat/parseChat'
 import { chatFromFolder, chatLabel, groupChats, mediaKind, type ChatSource, type ExportFile } from '../chatFiles'
-import { demoMedia } from '../demoChat'
+import { navigate } from '../routes'
 
 type Props = {
   onUploaded: (chat: ActiveChat, media: ReadonlyMap<string, ExportFile>) => void
@@ -17,25 +19,12 @@ type Step =
 
 const folderPickerProps = { webkitdirectory: '' } as InputHTMLAttributes<HTMLInputElement>
 
-const REPO_URL = 'https://github.com/hfent0n/MessengerQuiz'
-
 export default function SelectChatScreen({ onUploaded }: Props) {
   const [step, setStep] = useState<Step>({ kind: 'pick' })
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
-  // Null until the server says. Upload options stay hidden until then, so the public site never shows them.
-  const [demoOnly, setDemoOnly] = useState<boolean | null>(null)
-
-  useEffect(() => {
-    let current = true
-    getConfig()
-      .then((config) => current && setDemoOnly(config.demoOnly))
-      // If the settings can't be read, show uploads. The server still refuses them on a demo-only site.
-      .catch(() => current && setDemoOnly(false))
-    return () => {
-      current = false
-    }
-  }, [])
+  // The player confirms they're in the chat before using anyone else's messages.
+  const [agreed, setAgreed] = useState(false)
 
   async function handleZips(event: ChangeEvent<HTMLInputElement>) {
     const zips = [...(event.target.files ?? [])]
@@ -81,25 +70,32 @@ export default function SelectChatScreen({ onUploaded }: Props) {
     setStep({ kind: 'uploading' })
 
     try {
-      const { chatId, title } = await uploadChat(chat)
-      onUploaded({ chatId, title }, chat.media)
+      // Read and encrypted here. The server only gets sealed text and names.
+      const pages = await Promise.all(chat.pages.map(async (page) => (await page.load()).text()))
+      const parsed = parseChat(pages)
+      await send(parsed, chat.media, false)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Something went wrong. Try again.')
+      setError(caught instanceof ChatParseError || caught instanceof Error ? caught.message : 'Something went wrong. Try again.')
       setStep(previous)
     }
   }
 
+  // The demo goes through the same encryption and upload as a real chat.
   async function playDemo() {
     setError(null)
     setStep({ kind: 'demo' })
 
     try {
-      const { chatId, title } = await startDemo()
-      onUploaded({ chatId, title, demo: true }, demoMedia())
+      await send(demoChat(), demoMedia(), true)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Something went wrong. Try again.')
       setStep({ kind: 'pick' })
     }
+  }
+
+  async function send(chat: Chat, media: ReadonlyMap<string, ExportFile>, demo: boolean) {
+    const { chatId } = await uploadChat(chat, new Set(media.keys()))
+    onUploaded({ chatId, title: chat.title, people: chat.people, ...(demo && { demo }) }, media)
   }
 
   if (step.kind === 'choose') {
@@ -137,67 +133,54 @@ export default function SelectChatScreen({ onUploaded }: Props) {
   }
 
   const busy = step.kind !== 'pick'
-  const demoButton = (
-    <button
-      type="button"
-      className={['button', demoOnly ? 'primary' : '', step.kind === 'demo' ? 'busy' : ''].filter(Boolean).join(' ')}
-      disabled={busy}
-      onClick={playDemo}
-    >
-      {step.kind === 'demo' ? 'Starting demo…' : 'Try a demo chat'}
-    </button>
-  )
-
-  if (demoOnly !== false) {
-    return (
-      <section>
-        <p>Find out who really knows your group chat.</p>
-        <div className="actions">{demoButton}</div>
-        <p className="note">The demo is a made-up group chat between four flatmates, playable alone or with friends.</p>
-        {error && <p role="alert" className="error">{error}</p>}
-        {demoOnly && (
-          <p className="note">
-            To keep real messages private, this site only plays the demo. To play your own Facebook chats,{' '}
-            <a href={REPO_URL}>run Messenger Quiz on your own computer</a>, where your messages never leave it.
-          </p>
-        )}
-      </section>
-    )
-  }
+  const locked = busy || !agreed
 
   return (
     <section>
       <p>Find out who really knows your group chat.</p>
       <div className="actions">
-        <label className={busy ? 'button primary busy' : 'button primary'}>
+        <button type="button" className={step.kind === 'demo' ? 'button primary busy' : 'button primary'} disabled={busy} onClick={playDemo}>
+          {step.kind === 'demo' ? 'Starting demo…' : 'Try a demo chat'}
+        </button>
+      </div>
+      <p className="note">The demo is a made-up group chat between four flatmates, playable alone or with friends.</p>
+
+      <h2 className="section-heading">Play your own chat</h2>
+      <p className="note">
+        Download your Facebook information in HTML format, then choose every zip it came in at once. A chat's photos
+        and videos can be spread across them.
+      </p>
+      <p className="note">
+        Your chat is read and <strong>encrypted on this device</strong> before it's uploaded. The server can't read
+        messages or names, and deletes the chat after 2 idle hours. Photos and videos never leave your device.{' '}
+        <a href="/privacy" onClick={(event) => { event.preventDefault(); navigate('/privacy') }}>What the server sees</a>
+      </p>
+      <label className="consent">
+        <input type="checkbox" checked={agreed} disabled={busy} onChange={(event) => setAgreed(event.target.checked)} />
+        <span>
+          I'm in this chat, and I'll only share game links with other people in it. Their messages are theirs too.
+        </span>
+      </label>
+      <div className="actions">
+        <label className={['button', busy && step.kind !== 'demo' ? 'busy' : '', locked ? 'disabled' : ''].filter(Boolean).join(' ')} aria-disabled={locked}>
           {zipButtonLabel(step)}
           <input
             type="file"
             accept=".zip,application/zip"
             multiple
             className="visually-hidden"
-            disabled={busy}
+            disabled={locked}
             onChange={handleZips}
           />
         </label>
-        {demoButton}
       </div>
-      <p className="note">No Facebook download? The demo is a made-up group chat between four flatmates.</p>
       {error && <p role="alert" className="error">{error}</p>}
-      <p className="note">
-        Download your Facebook information in HTML format, then choose every zip it came in at once. A chat's photos
-        and videos can be spread across them.
-      </p>
-      <p className="note">
-        Only the chosen chat's messages are uploaded. They're held in memory, never saved to disk, and deleted after 2
-        idle hours. Photos and videos are shown from your own files and never leave your device.
-      </p>
-      <label className={busy ? 'link busy' : 'link'}>
+      <label className={locked ? 'link disabled' : 'link'} aria-disabled={locked}>
         Or choose an unzipped chat folder
         <input
           type="file"
           className="visually-hidden"
-          disabled={busy}
+          disabled={locked}
           onChange={handleFolder}
           {...folderPickerProps}
         />
@@ -208,7 +191,7 @@ export default function SelectChatScreen({ onUploaded }: Props) {
 
 function zipButtonLabel(step: Step): string {
   if (step.kind === 'reading') return 'Reading zips…'
-  if (step.kind === 'uploading') return 'Uploading…'
+  if (step.kind === 'uploading') return 'Encrypting and uploading…'
   return 'Choose your export zips'
 }
 

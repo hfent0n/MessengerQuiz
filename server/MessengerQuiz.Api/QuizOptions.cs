@@ -4,25 +4,28 @@ public sealed class QuizOptions
 {
     public const string SectionName = "Quiz";
 
-    // On the public site only the demo chat can be played, so real chats are never uploaded to a hosted server.
-    public bool DemoOnly { get; set; }
-
     // Behind a proxy such as Cloud Run's, every request seems to come from the proxy. This reads the visitor's
     // address from the X-Forwarded-For header instead, so rate limits apply per visitor. Only turn it on behind
     // a proxy that sets that header, or visitors could claim any address.
     public bool TrustForwardedHeaders { get; set; }
 
-    public long MaxUploadBytes { get; set; } = 50 * 1024 * 1024;
+    // Sized so a few uploads at once fit in a 512 MB Cloud Run instance alongside the stored chats.
+    public long MaxUploadBytes { get; set; } = 20 * 1024 * 1024;
 
-    // Pages arrive gzipped, so this limits their combined size once decompressed.
-    public long MaxPagesBytes { get; set; } = 100 * 1024 * 1024;
-    public long ChatMemoryCapBytes { get; set; } = 1024 * 1024 * 1024;
+    // Uploads arrive gzipped, so this limits their size once decompressed.
+    public long MaxChatBytes { get; set; } = 40 * 1024 * 1024;
+    public long ChatMemoryCapBytes { get; set; } = 192 * 1024 * 1024;
+
+    // Limits on what one upload can hold.
+    public int MaxMessages { get; set; } = 300_000;
+    public int MaxPeople { get; set; } = 1_000;
+
+    // The longest sealed box, in characters. Generous, since one message can be long.
+    public int MaxSealedLength { get; set; } = 100_000;
     public TimeSpan ChatExpiry { get; set; } = TimeSpan.FromHours(2);
     public int MaxConcurrentParses { get; set; } = 2;
     public int ParseQueueLimit { get; set; } = 4;
     public int UploadsPerMinutePerIp { get; set; } = 5;
-
-    public int MinMessageLength { get; set; } = 30;
 
     // Questions come from this share of messages, ranked by reaction count.
     public double TopReactionShare { get; set; } = 0.05;
@@ -35,9 +38,6 @@ public sealed class QuizOptions
 
     // Each context message must be within this time of the next one.
     public TimeSpan ContextGap { get; set; } = TimeSpan.FromMinutes(2);
-
-    // The most media paths one upload can list as available.
-    public int MaxAvailableMedia { get; set; } = 50_000;
 
     // Multiplayer.
     public int MaxPlayers { get; set; } = 8;

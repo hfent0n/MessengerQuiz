@@ -1,29 +1,23 @@
-import { fileName, type ChatSource } from './chatFiles'
+import { loadChatKey, saveChatKey } from './chat/keys'
+import { openQuestion, personName, type OpenedMessage, type SealedQuestion } from './chat/openQuestion'
+import type { Chat } from './chat/parseChat'
+import { sealChat } from './chat/sealChat'
+import { exportKey, newChatKey } from './chat/sealing'
 
 export type UploadedChat = {
   chatId: string
-  title: string
-  participants: string[]
-  messageCount: number
   eligibleCount: number
 }
 
-export type ContextMessage = {
-  text: string
-  hasMedia: boolean
-  media: string[]
-}
+export type ContextMessage = OpenedMessage
 
-export type Question = {
-  messageId: string
-  text: string
-  // Paths inside the chat folder, shown from the player's own files.
-  media: string[]
-  // Earlier messages from the same sender, oldest first.
+export type Question = OpenedMessage & {
+  position: number
   context: ContextMessage[]
+  // People's names, decrypted in the browser.
   options: string[]
   answer: string
-  reactions: number
+  reactionCount: number
 }
 
 export class ApiError extends Error {
@@ -37,55 +31,52 @@ export class ApiError extends Error {
 
 const CHAT_ID_HEADER = 'X-Chat-Id'
 
-// Pages are gzipped first, which makes them about 9 times smaller. Media never leaves the device, only file names.
-export async function uploadChat(chat: ChatSource): Promise<UploadedChat> {
-  const form = new FormData()
-  for (const page of chat.pages) {
-    form.append('files', await gzip(await page.load()), `${chat.folder}/${fileName(page)}`)
-  }
-  form.append('media', JSON.stringify([...chat.media.keys()]))
+// Encrypts the chat with a new key, then uploads it gzipped. The key stays in this tab. Media never leaves the
+// device: only how many items each message has is sent.
+export async function uploadChat(chat: Chat, availableMedia: ReadonlySet<string>): Promise<UploadedChat> {
+  const key = await newChatKey()
+  const upload = await sealChat(chat, key, availableMedia)
 
-  const response = await fetch('/api/chats', { method: 'POST', body: form })
+  const response = await fetch('/api/chats', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: await gzip(new Blob([JSON.stringify(upload)])),
+  })
   if (!response.ok) throw await toApiError(response)
 
-  return response.json()
+  const uploaded: UploadedChat = await response.json()
+  saveChatKey(uploaded.chatId, await exportKey(key))
+  return uploaded
 }
 
 function gzip(blob: Blob): Promise<Blob> {
   return new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob()
 }
 
-export type SiteConfig = {
-  // The public site only plays the demo chat, so real chats are never uploaded to it.
-  demoOnly: boolean
-}
-
-export async function getConfig(): Promise<SiteConfig> {
-  const response = await fetch('/api/config')
-  if (!response.ok) throw await toApiError(response)
-
-  return response.json()
-}
-
-// A made-up chat for trying the game without a Facebook export.
-export async function startDemo(): Promise<UploadedChat> {
-  const response = await fetch('/api/chats/demo', { method: 'POST' })
-  if (!response.ok) throw await toApiError(response)
-
-  return response.json()
-}
+type SealedWhoSaidThis = SealedQuestion & { options: number[]; answer: number; reactions: number }
 
 // Returns null when the chat has no questions left.
-export async function nextQuestion(chatId: string): Promise<Question | null> {
-  const response = await fetch('/api/questions/who-said-this', {
-    headers: { [CHAT_ID_HEADER]: chatId },
-  })
-  if (!response.ok) throw await toApiError(response)
+export async function nextQuestion(chatId: string, people: string[]): Promise<Question | null> {
+  const key = await loadChatKey(chatId)
+  if (!key) throw new ApiError(401, "This chat's key is missing. Choose the chat again.")
 
-  return response.status === 204 ? null : response.json()
+  const response = await fetch('/api/questions/who-said-this', { headers: { [CHAT_ID_HEADER]: chatId } })
+  if (!response.ok) throw await toApiError(response)
+  if (response.status === 204) return null
+
+  const sealed: SealedWhoSaidThis = await response.json()
+  const opened = await openQuestion(key, sealed)
+  return {
+    ...opened,
+    position: sealed.position,
+    options: sealed.options.map((person) => personName(people, person)),
+    answer: personName(people, sealed.answer),
+    reactionCount: sealed.reactions,
+  }
 }
 
 export async function deleteChat(chatId: string): Promise<void> {
+  saveChatKey(chatId, null)
   await fetch('/api/chats/current', {
     method: 'DELETE',
     headers: { [CHAT_ID_HEADER]: chatId },
