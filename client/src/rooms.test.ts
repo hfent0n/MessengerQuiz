@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isValidName } from './rooms'
+import { cleanChatMessage, isValidName } from './rooms'
 import { parseRoute } from './routes'
 
 describe('isValidName', () => {
@@ -21,5 +21,17 @@ describe('parseRoute', () => {
     expect(parseRoute('/')).toEqual({ kind: 'home' })
     expect(parseRoute('/play/')).toEqual({ kind: 'home' })
     expect(parseRoute('/play/abc/extra')).toEqual({ kind: 'home' })
+  })
+})
+
+describe('cleanChatMessage', () => {
+  it('trims messages and keeps them to 200 characters', () => {
+    expect(cleanChatMessage('  hi  ')).toBe('hi')
+    expect(cleanChatMessage('x'.repeat(200))).toHaveLength(200)
+    expect(cleanChatMessage('x'.repeat(201))).toBeNull()
+  })
+
+  it('ignores empty messages', () => {
+    expect(cleanChatMessage('   ')).toBeNull()
   })
 })

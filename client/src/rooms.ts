@@ -4,6 +4,10 @@ import type { SealedContext } from './chat/openQuestion'
 export const TIME_LIMITS = [10, 20, 30, 60] as const
 export const DEFAULT_TIME_LIMIT = 20
 export const MAX_NAME_LENGTH = 20
+export const MAX_CHAT_LENGTH = 200
+
+// The only reactions the server accepts.
+export const QUICK_REACTIONS = ['😂', '🔥', '😮', '😭', '👏', '🤔'] as const
 
 export type RoomStage = 'lobby' | 'question' | 'reveal' | 'finished' | 'ended'
 
@@ -48,6 +52,18 @@ export type RoomView = {
     reactions: number
     picks: { playerId: string; option: number | null; points: number }[]
   } | null
+  // The latest chat messages, oldest first, sealed with the game link's key.
+  chat: ChatLine[]
+}
+
+export type ChatLine = { id: number; playerId: string; sealed: string }
+
+export type Reaction = { id: number; playerId: string; emoji: string }
+
+// Trimmed, and no longer than the limit.
+export function cleanChatMessage(text: string): string | null {
+  const trimmed = text.trim()
+  return trimmed.length > 0 && trimmed.length <= MAX_CHAT_LENGTH ? trimmed : null
 }
 
 type JoinedRoom = { code: string; playerToken: string }

@@ -15,7 +15,12 @@ public sealed class Room(string code, string chatId, ChatSession session, TimeSp
     private readonly HashSet<int> _askedPositions = [];
     private readonly Dictionary<string, PlayerAnswer> _answers = [];
     private readonly HashSet<string> _ready = [];
+    private readonly List<ChatLine> _chat = [];
     private IReadOnlyList<WhoSaidThisQuestion> _questions = [];
+    private int _nextChatId;
+
+    // The most chat messages kept, oldest dropped first.
+    public const int MaxChatLines = 50;
 
     public Lock Gate { get; } = new();
 
@@ -42,6 +47,7 @@ public sealed class Room(string code, string chatId, ChatSession session, TimeSp
     public IReadOnlySet<int> AskedPositions => _askedPositions;
     public IReadOnlyDictionary<string, PlayerAnswer> Answers => _answers;
     public IReadOnlySet<string> ReadyPlayerIds => _ready;
+    public IReadOnlyList<ChatLine> Chat => _chat;
 
     public WhoSaidThisQuestion? CurrentQuestion =>
         QuestionIndex >= 0 && QuestionIndex < _questions.Count ? _questions[QuestionIndex] : null;
@@ -153,6 +159,24 @@ public sealed class Room(string code, string chatId, ChatSession session, TimeSp
         }
 
         Changed();
+    }
+
+    // Chat stays open throughout, including during questions. Returns false once the game has ended.
+    public bool AddChat(Player player, string sealedMessage)
+    {
+        if (Stage == RoomStage.Ended)
+        {
+            return false;
+        }
+
+        _chat.Add(new ChatLine(++_nextChatId, player.Id, sealedMessage));
+        if (_chat.Count > MaxChatLines)
+        {
+            _chat.RemoveAt(0);
+        }
+
+        Changed();
+        return true;
     }
 
     public void End()

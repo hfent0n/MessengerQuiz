@@ -46,6 +46,9 @@ public sealed class QuizOptions
     public int MaxRoomsPerChat { get; set; } = 5;
     public int RoomRequestsPerMinutePerIp { get; set; } = 20;
 
+    // A sealed chat message, in characters. Fits 200 characters of text, even in emoji.
+    public int MaxSealedChatLength { get; set; } = 1_600;
+
     // Answers this long after the deadline still count, to allow for network delay.
     public TimeSpan AnswerGrace { get; set; } = TimeSpan.FromSeconds(1);
 

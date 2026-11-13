@@ -16,5 +16,9 @@ public sealed class GameHub(GameService games) : Hub
 
     public Task<string?> Ready() => games.ReadyAsync(Context.ConnectionId);
 
+    public Task<string?> Chat(string sealedMessage) => games.ChatAsync(Context.ConnectionId, sealedMessage);
+
+    public Task<string?> React(string emoji) => games.ReactAsync(Context.ConnectionId, emoji);
+
     public override Task OnDisconnectedAsync(Exception? exception) => games.DisconnectAsync(Context.ConnectionId);
 }

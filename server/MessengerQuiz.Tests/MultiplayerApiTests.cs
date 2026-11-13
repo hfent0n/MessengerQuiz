@@ -259,6 +259,99 @@ public class MultiplayerApiTests : IAsyncLifetime
         return texts;
     }
 
+    [Fact]
+    public async Task ChatMessagesReachEveryPlayerStillSealed()
+    {
+        var (host, guest) = await StartTwoPlayerGame();
+        var sealedMessage = TestChats.Sealed("hello from the host");
+
+        // Chat stays open during questions.
+        await host.WaitFor(view => Stage(view) == "question");
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Chat", sealedMessage));
+
+        var view = await guest.WaitFor(view => view.GetProperty("chat").GetArrayLength() == 1);
+        var line = view.GetProperty("chat")[0];
+        Assert.Equal(sealedMessage, line.GetProperty("sealed").GetString());
+        Assert.Equal(PlayerId(host), line.GetProperty("playerId").GetString());
+    }
+
+    [Theory]
+    [InlineData("plain readable text")]
+    [InlineData("")]
+    public async Task ChatOnlyAcceptsSealedMessages(string message)
+    {
+        var (host, _) = await StartTwoPlayerGame();
+
+        Assert.NotNull(await host.Hub.InvokeAsync<string?>("Chat", message));
+    }
+
+    [Fact]
+    public async Task ChatRejectsMessagesThatAreTooLong()
+    {
+        var (host, _) = await StartTwoPlayerGame();
+
+        Assert.NotNull(await host.Hub.InvokeAsync<string?>("Chat", new string('a', 1_601)));
+    }
+
+    [Fact]
+    public async Task ChatIsRateLimitedPerPlayer()
+    {
+        var (host, guest) = await StartTwoPlayerGame();
+
+        for (var index = 0; index < 5; index++)
+        {
+            Assert.Null(await host.Hub.InvokeAsync<string?>("Chat", TestChats.Sealed($"message {index}")));
+        }
+
+        Assert.NotNull(await host.Hub.InvokeAsync<string?>("Chat", TestChats.Sealed("one too many")));
+        // The limit is per player.
+        Assert.Null(await guest.Hub.InvokeAsync<string?>("Chat", TestChats.Sealed("from the guest")));
+
+        _time.Advance(TimeSpan.FromSeconds(5));
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Chat", TestChats.Sealed("after a pause")));
+    }
+
+    [Fact]
+    public async Task ReactionsReachEveryPlayer()
+    {
+        var (host, guest) = await StartTwoPlayerGame();
+
+        Assert.Null(await host.Hub.InvokeAsync<string?>("React", "🔥"));
+
+        var reaction = await guest.WaitForReaction();
+        Assert.Equal("🔥", reaction.GetProperty("emoji").GetString());
+        Assert.Equal(PlayerId(host), reaction.GetProperty("playerId").GetString());
+        Assert.Equal("🔥", (await host.WaitForReaction()).GetProperty("emoji").GetString());
+    }
+
+    [Theory]
+    [InlineData("💩")]
+    [InlineData("hello")]
+    [InlineData("")]
+    public async Task OnlyTheQuickReactionsAreAllowed(string emoji)
+    {
+        var (host, _) = await StartTwoPlayerGame();
+
+        Assert.NotNull(await host.Hub.InvokeAsync<string?>("React", emoji));
+    }
+
+    [Fact]
+    public async Task ReactionsOverTheLimitAreDroppedQuietly()
+    {
+        var (host, guest) = await StartTwoPlayerGame();
+
+        for (var index = 0; index < 10; index++)
+        {
+            Assert.Null(await host.Hub.InvokeAsync<string?>("React", "😂"));
+        }
+
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Chat", TestChats.Sealed("after the reactions")));
+        await guest.WaitFor(view => view.GetProperty("chat").GetArrayLength() == 1);
+        Assert.Equal(6, guest.ReactionCount);
+    }
+
+    private static string PlayerId(TestPlayer player) => player.LastView!.Value.GetProperty("youId").GetString()!;
+
     private async Task<(TestPlayer Host, TestPlayer Guest)> StartTwoPlayerGame()
     {
         var (host, code, _) = await CreateRoom("Host");
@@ -347,6 +440,7 @@ public class MultiplayerApiTests : IAsyncLifetime
     private sealed class TestPlayer : IAsyncDisposable
     {
         private readonly Channel<JsonElement> _views = Channel.CreateUnbounded<JsonElement>();
+        private readonly Channel<JsonElement> _reactions = Channel.CreateUnbounded<JsonElement>();
 
         public TestPlayer(HubConnection hub, string code, string token, string chatId)
         {
@@ -354,7 +448,16 @@ public class MultiplayerApiTests : IAsyncLifetime
             Code = code;
             Token = token;
             ChatId = chatId;
-            hub.On<JsonElement>("room", view => _views.Writer.TryWrite(view));
+            hub.On<JsonElement>("room", view =>
+            {
+                LastView = view;
+                _views.Writer.TryWrite(view);
+            });
+            hub.On<JsonElement>("reaction", reaction =>
+            {
+                Interlocked.Increment(ref _reactionCount);
+                _reactions.Writer.TryWrite(reaction);
+            });
         }
 
         public HubConnection Hub { get; }
@@ -362,6 +465,16 @@ public class MultiplayerApiTests : IAsyncLifetime
         public string Token { get; }
         public string ChatId { get; }
         public string? ConnectError { get; set; }
+        public JsonElement? LastView { get; private set; }
+        public int ReactionCount => Volatile.Read(ref _reactionCount);
+
+        private int _reactionCount;
+
+        public async Task<JsonElement> WaitForReaction()
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            return await _reactions.Reader.ReadAsync(timeout.Token);
+        }
 
         // Skips older updates until one matches.
         public async Task<JsonElement> WaitFor(Func<JsonElement, bool> match)

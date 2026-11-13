@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { linkWithKey, loadRoomKey, roomKeyText } from '../chat/keys'
 import { openPeople, openQuestion, personName, type OpenedQuestion } from '../chat/openQuestion'
+import GameChat from '../components/GameChat'
 import MessageThread from '../components/MessageThread'
+import QuickReactions from '../components/QuickReactions'
 import { questionPrompt, reactionSummary } from '../questionText'
 import type { PlayerView, RoomView } from '../rooms'
 import { playPath } from '../routes'
-import { useRoom } from '../useRoom'
+import { useRoom, type Action } from '../useRoom'
 
 type Props = {
   code: string
@@ -19,11 +21,11 @@ type Props = {
 const NO_FILES = new Map()
 
 export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
-  const { view, error, reconnecting, send } = useRoom(code, token)
+  const { view, error, reconnecting, reactions, send } = useRoom(code, token)
   const contents = useOpenedContents(code, view)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  async function act(method: 'Start' | 'Answer' | 'Ready', ...args: number[]) {
+  async function act(method: Action, ...args: number[]) {
     setActionError(await send(method, ...args))
   }
 
@@ -38,7 +40,7 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
     )
   }
 
-  if (!view || !contents.people) return <p className="note">Connecting…</p>
+  if (!view || !contents.people || !contents.key) return <p className="note">Connecting…</p>
 
   const playing = view.stage === 'question' || view.stage === 'reveal'
 
@@ -76,6 +78,15 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
       {view.stage === 'finished' && <Results view={view} onRematch={() => act('Start')} />}
 
       {actionError && <p role="alert" className="error">{actionError}</p>}
+
+      <QuickReactions reactions={reactions} players={view.players} onReact={(emoji) => void send('React', emoji)} />
+      <GameChat
+        lines={view.chat}
+        players={view.players}
+        youId={view.youId}
+        roomKey={contents.key}
+        onSend={(sealed) => send('Chat', sealed)}
+      />
 
       {view.youAreHost ? (
         <button className="link" onClick={onWipe}>End the game and wipe my chat</button>
@@ -122,6 +133,7 @@ function useOpenedContents(code: string, view: RoomView | null) {
   }, [key, position, sealed])
 
   return {
+    key,
     error: key === null ? "This link is missing its key. Ask the host to send the whole link again." : error,
     people,
     question: opened && opened.position === position ? opened.question : null,

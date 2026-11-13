@@ -11,6 +11,8 @@ export const labels = {
   title: 'title',
   people: 'people',
   message: (position: number) => `message:${position}`,
+  // A multiplayer chat message, labelled with its sender so it can't be passed off as someone else's.
+  chatLine: (playerId: string) => `chat:${playerId}`,
 }
 
 // Opening failed: the box was changed, moved or sealed with another key.

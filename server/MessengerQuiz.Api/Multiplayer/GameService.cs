@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using MessengerQuiz.Api.Questions;
 using MessengerQuiz.Api.Selection;
 using MessengerQuiz.Api.Storage;
+using MessengerQuiz.Api.Uploads;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 
@@ -16,6 +17,9 @@ public sealed record JoinResult(JoinOutcome? Outcome, Player? Player, bool Inval
 public sealed class GameService : IDisposable
 {
     public const string RoomEvent = "room";
+
+    // A quick reaction, sent to everyone in the room as it happens. Not stored.
+    public const string ReactionEvent = "reaction";
 
     private readonly RoomStore _rooms;
     private readonly ChatStore _chats;
@@ -191,6 +195,56 @@ public sealed class GameService : IDisposable
         return null;
     });
 
+    public Task<string?> ChatAsync(string connectionId, string? sealedMessage) => ActAsync(connectionId, (room, player) =>
+    {
+        if (!ChatUploads.IsSealed(sealedMessage, _options.MaxSealedChatLength))
+        {
+            return "That message couldn't be sent.";
+        }
+
+        if (!player.ChatLimit.TryTake(Now))
+        {
+            return "You're sending messages too quickly.";
+        }
+
+        room.AddChat(player, sealedMessage);
+        return null;
+    });
+
+    // Reactions go straight to everyone in the room, without changing the room or being kept.
+    public async Task<string?> ReactAsync(string connectionId, string? emoji)
+    {
+        if (!_connections.TryGetValue(connectionId, out var seat))
+        {
+            return "You're not in this game. Open the link again.";
+        }
+
+        if (emoji is null || !QuickReactions.Allowed.Contains(emoji))
+        {
+            return "That reaction isn't available.";
+        }
+
+        var (room, player) = seat;
+        List<string> recipients;
+        lock (room.Gate)
+        {
+            if (room.Stage == RoomStage.Ended)
+            {
+                return "This game has ended.";
+            }
+
+            if (!player.ReactionLimit.TryTake(Now))
+            {
+                return null;
+            }
+
+            recipients = room.Players.Select(other => other.ConnectionId).OfType<string>().ToList();
+        }
+
+        await _hub.Clients.Clients(recipients).SendAsync(ReactionEvent, new ReactionView(player.Id, emoji));
+        return null;
+    }
+
     public void Dispose()
     {
         _chats.Removed -= EndRoomsForChat;
@@ -340,4 +394,6 @@ public sealed class GameService : IDisposable
     }
 
     private sealed record RoundTimer(ITimer Timer, int Round);
+
+    private sealed record ReactionView(string PlayerId, string Emoji);
 }

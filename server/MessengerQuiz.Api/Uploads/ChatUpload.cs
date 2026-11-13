@@ -88,7 +88,7 @@ public static partial class ChatUploads
         return true;
     }
 
-    private static bool IsSealed([NotNullWhen(true)] string? value, int maxLength) =>
+    public static bool IsSealed([NotNullWhen(true)] string? value, int maxLength) =>
         value is not null && value.Length >= MinSealedLength && value.Length <= maxLength && Base64Url().IsMatch(value);
 
     [GeneratedRegex("^[A-Za-z0-9_-]+$")]

@@ -18,6 +18,10 @@ public sealed class Player(string id, string token, string name, bool isHost)
 
     // Breaks ties. A question that wasn't answered counts as the whole time limit.
     public TimeSpan AnswerTime { get; set; }
+
+    // About one chat message a second, and a few reactions a second, with short bursts allowed.
+    public ActionLimiter ChatLimit { get; } = new(5, TimeSpan.FromSeconds(5));
+    public ActionLimiter ReactionLimit { get; } = new(6, TimeSpan.FromSeconds(3));
 }
 
 // Option is the number of the person picked.

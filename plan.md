@@ -347,6 +347,16 @@ Each player has a score bar that fills towards the most points possible in the g
 - **Names:** trimmed, 1 to 20 characters, letters and digits only, with single spaces between words. Unicode letters are allowed, so names such as "José" work. Control characters and invisible characters are rejected. Names must be unique in the room, ignoring case. React escapes names when it shows them, so they can't inject HTML.
 - **Players:** up to 8, including the host.
 
+### Chat and quick reactions
+
+Built. Players can chat and react at any time, including during questions, by choice: it's a social game, so giving away an answer is up to the players.
+
+- **Encrypted chat:** a message is sealed in the sender's browser with the game link's key, labelled `chat:<player ID>`. The server can't read it, and can't pass it off as another player's, because it wouldn't open under their label.
+- **Kept in memory:** the room keeps the latest 50 messages and includes them in each player's view, so a refresh or late joiner sees them. They go when the room ends.
+- **Limits:** messages up to 200 characters, sealed into at most 1,600. Each player gets 5 messages per 5 seconds, and 6 reactions per 3 seconds. Reactions over the limit are dropped quietly.
+- **Quick reactions:** 😂 🔥 😮 😭 👏 🤔. The server only accepts these, sends them to everyone in the room as a `reaction` event and keeps nothing. They float up the screen with the sender's name, or fade in place for people who prefer reduced motion.
+- **Hub methods:** `Chat(sealed)` and `React(emoji)`, each returning an error or null.
+
 ### Server
 
 - **SignalR hub** at `/api/rooms/hub`, built into ASP.NET, for real-time events: player joined or left, game started, question started, player answered, reveal, player ready and game over.

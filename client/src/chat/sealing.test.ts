@@ -33,6 +33,14 @@ describe('sealing', () => {
     await expect(open(key, labels.message(2), sealed)).rejects.toThrow(SealError)
   })
 
+  it("refuses to open a chat message as someone else's", async () => {
+    const key = await newChatKey()
+    const sealed = await seal(key, labels.chatLine('player-a'), 'hello')
+
+    expect(await open(key, labels.chatLine('player-a'), sealed)).toBe('hello')
+    await expect(open(key, labels.chatLine('player-b'), sealed)).rejects.toThrow(SealError)
+  })
+
   it('refuses to open a changed box', async () => {
     const key = await newChatKey()
     const box = fromBase64Url(await seal(key, labels.title, 'Title'))!

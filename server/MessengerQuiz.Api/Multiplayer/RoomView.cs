@@ -20,7 +20,9 @@ public sealed record RoomView(
     int QuestionCount,
     int MaxScore,
     QuestionView? Question,
-    RevealView? Reveal)
+    RevealView? Reveal,
+    // The latest chat messages, oldest first, still sealed.
+    IReadOnlyList<ChatLine> Chat)
 {
     public static RoomView For(Room room, Player viewer, DateTimeOffset now)
     {
@@ -64,7 +66,8 @@ public sealed record RoomView(
             room.Questions.Count,
             room.Questions.Count * Scoring.MaxPointsPerQuestion,
             showsQuestion ? QuestionView.For(room, question!, viewer, now) : null,
-            room.Stage == RoomStage.Reveal ? RevealView.For(room, question!) : null);
+            room.Stage == RoomStage.Reveal ? RevealView.For(room, question!) : null,
+            room.Chat.ToList());
     }
 }
 

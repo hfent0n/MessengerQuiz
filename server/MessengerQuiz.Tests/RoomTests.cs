@@ -225,6 +225,41 @@ public class RoomTests
         Assert.Equal([_guest.Id, _host.Id], RoomView.For(_room, _host, Start).Players.Select(player => player.Id));
     }
 
+    [Fact]
+    public void ChatKeepsTheLatestMessages()
+    {
+        for (var index = 1; index <= Room.MaxChatLines + 10; index++)
+        {
+            _room.AddChat(_host, TestChats.Sealed($"message {index}"));
+        }
+
+        Assert.Equal(Room.MaxChatLines, _room.Chat.Count);
+        Assert.Equal("message 11", TestChats.Label(_room.Chat[0].Sealed));
+        Assert.Equal(Room.MaxChatLines + 10, _room.Chat[^1].Id);
+    }
+
+    [Fact]
+    public void ChatWorksDuringQuestionsButNotAfterTheEnd()
+    {
+        StartGame(questionCount: 1);
+
+        Assert.True(_room.AddChat(_guest, TestChats.Sealed("during a question")));
+
+        _room.End();
+        Assert.False(_room.AddChat(_guest, TestChats.Sealed("too late")));
+    }
+
+    [Fact]
+    public void ActionLimiterAllowsBurstsThenWaits()
+    {
+        var limiter = new ActionLimiter(2, TimeSpan.FromSeconds(5));
+
+        Assert.True(limiter.TryTake(Start));
+        Assert.True(limiter.TryTake(Start + TimeSpan.FromSeconds(1)));
+        Assert.False(limiter.TryTake(Start + TimeSpan.FromSeconds(2)));
+        Assert.True(limiter.TryTake(Start + TimeSpan.FromSeconds(5)));
+    }
+
     private void StartGame(int questionCount)
     {
         var questions = Enumerable.Range(0, questionCount).Select(Question).ToList();

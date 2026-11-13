@@ -49,7 +49,9 @@ export default function PrivacyScreen() {
       <h3>Multiplayer</h3>
       <p>
         A game link ends with the key, after a <code>#</code>. Browsers never send that part to the server, but anyone
-        with the link can read the game's questions, so only share it with people in the chat.
+        with the link can read the game's questions, so only share it with people in the chat. Players' chat messages
+        are encrypted with the same key, so the server can't read those either. It does see which quick reactions
+        players send.
       </p>
 
       <h3>What this doesn't protect against</h3>
