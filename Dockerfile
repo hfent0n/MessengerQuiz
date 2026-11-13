@@ -10,7 +10,7 @@ COPY client/ ./
 RUN npm run build
 
 # 2. Publish the server.
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS server
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS server
 WORKDIR /src
 COPY server/MessengerQuiz.Api/MessengerQuiz.Api.csproj server/MessengerQuiz.Api/
 RUN dotnet restore server/MessengerQuiz.Api/MessengerQuiz.Api.csproj
