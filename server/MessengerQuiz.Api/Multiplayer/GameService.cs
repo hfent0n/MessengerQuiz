@@ -21,6 +21,10 @@ public sealed class GameService : IDisposable
     // A quick reaction, sent to everyone in the room as it happens. Not stored.
     public const string ReactionEvent = "reaction";
 
+    // Tells a player the host removed them.
+    public const string RemovedEvent = "removed";
+    public const string RemovedMessage = "The host removed you from this game.";
+
     private readonly RoomStore _rooms;
     private readonly ChatStore _chats;
     private readonly MessageSelector _selector;
@@ -135,15 +139,20 @@ public sealed class GameService : IDisposable
     public async Task<string?> ConnectAsync(string code, string token, string connectionId)
     {
         var room = _rooms.Find(code);
-        // Compared in constant time, so response times don't reveal how much of a guessed token was right.
-        var player = room?.Players.FirstOrDefault(candidate => RoomStore.TokensMatch(candidate.Token, token));
-        if (room is null || player is null)
+        if (room is null)
         {
             return "This game has ended or the link is wrong.";
         }
 
         lock (room.Gate)
         {
+            // Compared in constant time, so response times don't reveal how much of a guessed token was right.
+            var player = room.Players.FirstOrDefault(candidate => RoomStore.TokensMatch(candidate.Token, token));
+            if (player is null)
+            {
+                return room.WasRemoved(token) ? RemovedMessage : "This game has ended or the link is wrong.";
+            }
+
             if (player.ConnectionId is { } previous)
             {
                 _connections.TryRemove(previous, out _);
@@ -209,6 +218,38 @@ public sealed class GameService : IDisposable
         room.MarkReady(player, Now);
         return null;
     });
+
+    public async Task<string?> RemoveAsync(string connectionId, string playerId)
+    {
+        if (!_connections.TryGetValue(connectionId, out var seat))
+        {
+            return "You're not in this game. Open the link again.";
+        }
+
+        var (room, host) = seat;
+        Player? removed;
+        lock (room.Gate)
+        {
+            removed = room.Remove(host, playerId);
+            if (removed?.ConnectionId is { } removedConnection)
+            {
+                _connections.TryRemove(removedConnection, out _);
+            }
+        }
+
+        if (removed is null)
+        {
+            return "Only the host can remove players, and only before the game starts.";
+        }
+
+        if (removed.ConnectionId is { } connection)
+        {
+            await _hub.Clients.Client(connection).SendAsync(RemovedEvent, RemovedMessage);
+        }
+
+        await BroadcastAsync(room);
+        return null;
+    }
 
     public Task<string?> ChatAsync(string connectionId, string? sealedMessage) => ActAsync(connectionId, (room, player) =>
     {

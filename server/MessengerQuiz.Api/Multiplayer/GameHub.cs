@@ -16,6 +16,9 @@ public sealed class GameHub(GameService games) : Hub
 
     public Task<string?> Ready() => games.ReadyAsync(Context.ConnectionId);
 
+    // The host removes a player from the lobby.
+    public Task<string?> Remove(string playerId) => games.RemoveAsync(Context.ConnectionId, playerId);
+
     // Ends an endless game and shows the results.
     public Task<string?> Declare() => games.DeclareAsync(Context.ConnectionId);
 

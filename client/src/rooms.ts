@@ -41,8 +41,10 @@ export type RoomView = {
   // Ranked by score, then by total answer time.
   players: PlayerView[]
   questionNumber: number
-  // In endless mode, how many questions the chat has left to give, at most.
+  // How many questions the game has once started. In endless mode, how many the chat has left to give, at most.
   questionCount: number
+  // The length the host chose, shown in the lobby. Null for endless.
+  questionLimit: number | null
   endless: boolean
   // What a full score bar stands for. In endless mode, the questions asked so far.
   maxScore: number

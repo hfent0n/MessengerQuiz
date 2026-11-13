@@ -13,7 +13,7 @@ type Connection = {
   send: (method: Action, ...args: (string | number)[]) => Promise<string | null>
 }
 
-export type Action = 'Start' | 'Answer' | 'Ready' | 'Chat' | 'React' | 'Declare'
+export type Action = 'Start' | 'Answer' | 'Ready' | 'Chat' | 'React' | 'Declare' | 'Remove'
 
 // How long a reaction stays on screen.
 const REACTION_MS = 2500
@@ -38,6 +38,9 @@ export function useRoom(code: string, token: string): Connection {
     connection.on('room', (next: RoomView) => {
       setView((current) => (current && current.version > next.version ? current : next))
     })
+
+    // The host removed this player from the lobby.
+    connection.on('removed', (message: string) => setError(message))
 
     let nextReaction = 0
     connection.on('reaction', ({ playerId, emoji }: Omit<Reaction, 'id'>) => {

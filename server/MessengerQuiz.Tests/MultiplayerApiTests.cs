@@ -357,7 +357,9 @@ public class MultiplayerApiTests : IAsyncLifetime
     {
         var host = await CreateRoomWith(new { name = "Host", timeLimitSeconds = 20, questionCount });
         var guest = await JoinAndConnect(host.Code, "Guest");
-        await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
+        var lobby = await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
+        // The lobby shows the chosen length before any questions are picked.
+        Assert.Equal(questionCount, lobby.GetProperty("questionLimit").GetInt32());
 
         Assert.Null(await host.Hub.InvokeAsync<string?>("Start"));
 
@@ -400,6 +402,43 @@ public class MultiplayerApiTests : IAsyncLifetime
         Assert.NotNull(await guest.Hub.InvokeAsync<string?>("Declare"));
         Assert.Null(await host.Hub.InvokeAsync<string?>("Declare"));
         await guest.WaitFor(view => Stage(view) == "finished");
+    }
+
+    [Fact]
+    public async Task TheHostRemovesAPlayerFromTheLobby()
+    {
+        var (host, code, _) = await CreateRoom("Host");
+        var guest = await JoinAndConnect(code, "Guest");
+        await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
+        var guestId = PlayerId(guest);
+
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Remove", guestId));
+
+        Assert.Equal("The host removed you from this game.", await guest.WaitForRemoved());
+        await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 1);
+        // The removed player can't act, or reconnect to their seat.
+        Assert.NotNull(await guest.Hub.InvokeAsync<string?>("Chat", TestChats.Sealed("still here?")));
+        var again = await Connect(code, guest.Token);
+        Assert.Equal("The host removed you from this game.", again.ConnectError);
+    }
+
+    [Fact]
+    public async Task OnlyTheHostCanRemovePlayers()
+    {
+        var (host, code, _) = await CreateRoom("Host");
+        var guest = await JoinAndConnect(code, "Guest");
+        await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
+
+        Assert.NotNull(await guest.Hub.InvokeAsync<string?>("Remove", PlayerId(host)));
+    }
+
+    [Fact]
+    public async Task NobodyCanBeRemovedOnceTheGameStarts()
+    {
+        var (host, guest) = await StartTwoPlayerGame();
+        await guest.WaitFor(view => Stage(view) == "question");
+
+        Assert.NotNull(await host.Hub.InvokeAsync<string?>("Remove", PlayerId(guest)));
     }
 
     private async Task<TestPlayer> CreateRoomWith(object body)
@@ -505,6 +544,7 @@ public class MultiplayerApiTests : IAsyncLifetime
     {
         private readonly Channel<JsonElement> _views = Channel.CreateUnbounded<JsonElement>();
         private readonly Channel<JsonElement> _reactions = Channel.CreateUnbounded<JsonElement>();
+        private readonly Channel<string> _removed = Channel.CreateUnbounded<string>();
 
         public TestPlayer(HubConnection hub, string code, string token, string chatId)
         {
@@ -517,6 +557,7 @@ public class MultiplayerApiTests : IAsyncLifetime
                 LastView = view;
                 _views.Writer.TryWrite(view);
             });
+            hub.On<string>("removed", message => _removed.Writer.TryWrite(message));
             hub.On<JsonElement>("reaction", reaction =>
             {
                 Interlocked.Increment(ref _reactionCount);
@@ -533,6 +574,12 @@ public class MultiplayerApiTests : IAsyncLifetime
         public int ReactionCount => Volatile.Read(ref _reactionCount);
 
         private int _reactionCount;
+
+        public async Task<string> WaitForRemoved()
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            return await _removed.Reader.ReadAsync(timeout.Token);
+        }
 
         public async Task<JsonElement> WaitForReaction()
         {
