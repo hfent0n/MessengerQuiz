@@ -1,7 +1,7 @@
 # Builds Messenger Quiz as one container: the .NET server, serving the built React client.
 
 # 1. Build the client.
-FROM node:22-slim AS client
+FROM node:25-slim AS client
 WORKDIR /client
 # Installing packages before copying the code means they're only reinstalled when they change.
 COPY client/package.json client/package-lock.json ./
