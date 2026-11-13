@@ -77,7 +77,7 @@ jobs:
             --cpu 1 \
             --memory 512Mi \
             --timeout 3600 \
-            --set-env-vars "Quiz__DemoOnly=true,Quiz__TrustForwardedHeaders=true,APP_VERSION=$VERSION" \
+            --set-env-vars "Quiz__TrustForwardedHeaders=true,APP_VERSION=$VERSION" \
             --quiet
           echo "url=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" \
             --format 'value(status.url)')" >> "$GITHUB_OUTPUT"

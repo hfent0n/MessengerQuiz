@@ -4,6 +4,7 @@ import { uploadChat } from '../api'
 import { demoChat, demoMedia } from '../chat/demoChat'
 import { ChatParseError, parseChat, type Chat } from '../chat/parseChat'
 import { chatFromFolder, chatLabel, groupChats, mediaKind, type ChatSource, type ExportFile } from '../chatFiles'
+import { isStaleVersionError, NEW_VERSION_MESSAGE } from '../newVersion'
 import { navigate } from '../routes'
 
 type Props = {
@@ -46,7 +47,11 @@ export default function SelectChatScreen({ onUploaded }: Props) {
       setFilter('')
       setStep({ kind: 'choose', chats })
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Those zips couldn't be read.")
+      if (isStaleVersionError(caught)) {
+        setError(NEW_VERSION_MESSAGE)
+      } else {
+        setError(caught instanceof Error ? caught.message : "Those zips couldn't be read.")
+      }
       setStep({ kind: 'pick' })
     }
   }

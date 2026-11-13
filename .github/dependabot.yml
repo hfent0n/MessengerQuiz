@@ -1,0 +1,28 @@
+# Opens pull requests for dependency updates, including security fixes. CI checks each one before it can merge.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directories: [/server/MessengerQuiz.Api, /server/MessengerQuiz.Tests]
+    schedule:
+      interval: weekly
+    groups:
+      nuget:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directories: [/client, /deploy/billing-cap]
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
