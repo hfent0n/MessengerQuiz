@@ -14,6 +14,61 @@ public static class RoomEndpoints
         app.MapPost("/api/rooms", CreateRoom).RequireRateLimiting(RoomRateLimitPolicy);
         app.MapPost("/api/rooms/{code}/players", JoinRoom).RequireRateLimiting(RoomRateLimitPolicy);
         app.MapHub<GameHub>(GameHub.Path);
+
+        // Media relayed from the host to the other players, sealed with the game link's key.
+        app.MapPut("/api/rooms/{code}/media/{position:int}/{index:int}", UploadMedia);
+        app.MapGet("/api/rooms/{code}/media/{position:int}/{index:int}", GetMedia);
+    }
+
+    // A player's secret token, in a header so it stays out of URLs and logs.
+    private const string PlayerTokenHeader = "X-Player-Token";
+
+    // The body is the sealed file. An empty body means the host couldn't send it, such as a video over the limit.
+    private static async Task<IResult> UploadMedia(
+        string code, int position, int index, HttpContext context, GameService games, IOptions<QuizOptions> options)
+    {
+        var limit = options.Value.MaxRelayedFileBytes;
+        if (context.Request.ContentLength > limit)
+        {
+            return Problem(StatusCodes.Status413PayloadTooLarge, "This file is too large to send to the other players.");
+        }
+
+        using var body = new MemoryStream();
+        var buffer = new byte[81920];
+        int read;
+        while ((read = await context.Request.Body.ReadAsync(buffer, context.RequestAborted)) > 0)
+        {
+            if (body.Length + read > limit)
+            {
+                return Problem(StatusCodes.Status413PayloadTooLarge, "This file is too large to send to the other players.");
+            }
+
+            body.Write(buffer, 0, read);
+        }
+
+        var file = body.Length == 0 ? null : body.ToArray();
+        return await games.UploadMediaAsync(code, context.Request.Headers[PlayerTokenHeader].ToString(), position, index, file) switch
+        {
+            null => Problem(StatusCodes.Status403Forbidden, "Only the host can send the game's media."),
+            MediaUpload.Stored => Results.NoContent(),
+            MediaUpload.NotWanted => Problem(StatusCodes.Status404NotFound, "This game doesn't need that file."),
+            MediaUpload.TooLarge => Problem(StatusCodes.Status413PayloadTooLarge, "This file is too large to send to the other players."),
+            _ => Problem(StatusCodes.Status507InsufficientStorage, "There's no room for more media right now."),
+        };
+    }
+
+    // 404 means the host hasn't sent the file yet, so try again shortly. 410 means it won't come.
+    private static IResult GetMedia(string code, int position, int index, HttpContext context, GameService games)
+    {
+        var lookup = games.FindMedia(code, context.Request.Headers[PlayerTokenHeader].ToString(), position, index, out var file);
+        context.Response.Headers.CacheControl = "no-store";
+        return lookup switch
+        {
+            null => Problem(StatusCodes.Status401Unauthorized, "You're not in this game."),
+            MediaLookup.Found => Results.Bytes(file!, "application/octet-stream"),
+            MediaLookup.NotYet => Problem(StatusCodes.Status404NotFound, "This file hasn't arrived yet."),
+            _ => Problem(StatusCodes.Status410Gone, "This file isn't available."),
+        };
     }
 
     // The host's chat is identified by its ID, as for questions.

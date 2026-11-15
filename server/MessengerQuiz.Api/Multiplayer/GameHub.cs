@@ -10,7 +10,8 @@ public sealed class GameHub(GameService games) : Hub
     // The token is sent here rather than in the URL, which can reach logs.
     public Task<string?> Connect(string code, string token) => games.ConnectAsync(code, token, Context.ConnectionId);
 
-    public Task<string?> Start() => games.StartAsync(Context.ConnectionId);
+    // includeMedia: whether the host's browser has the chat's photos and videos to send to the other players.
+    public Task<string?> Start(bool includeMedia) => games.StartAsync(Context.ConnectionId, includeMedia);
 
     public Task<string?> Answer(int option) => games.AnswerAsync(Context.ConnectionId, option);
 

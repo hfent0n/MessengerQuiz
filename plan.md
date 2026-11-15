@@ -306,7 +306,7 @@ The chat ID is kept in `sessionStorage`, so it survives a refresh but is cleared
 | A secret ID rather than accounts | A short-lived game doesn't justify storing user identities |
 | One server instance | Chats exist only in the memory of the instance that received them |
 | Keep the .NET server, rather than running everything in the browser | Multiplayer needs a server to share questions and scores between players' devices, and heavier games such as sentiment analysis may need server-side processing |
-| Multiplayer is text only at first | Media only exists in the host's browser, and sending it to the server would break "media never leaves your device" |
+| Multiplayer media is relayed through the server, encrypted | It works on every network, unlike direct browser-to-browser WebRTC, which fails on some mobile, work and public networks without a paid relay. The server only sees sizes, at the cost of media leaving the host's device in encrypted form |
 | The server scores multiplayer answers | Sending answers with questions lets players read them in developer tools |
 | Ready step after each reveal, with disconnected players skipped | Players get time to react to the message, and a player who leaves can't stall the game |
 | A built-in demo chat | Recruiters and other visitors can try the game without requesting a Facebook download |
@@ -341,11 +341,24 @@ Each player has a score bar that fills towards the most points possible in the g
 ### Rules
 
 - **Questions:** 10 per game, or as many as the chat has if fewer. They're chosen when the game starts, with the same selection as single player. A room keeps its own record of what's been asked, so it doesn't use up the host's single-player questions, and a rematch avoids questions from earlier games in that room.
-- **Text only:** questions with photos, GIFs or videos are left out, and so is media context, because media only exists in the host's browser. Context messages that had media show "Sent something that can't be shown". See [future work](#game) for sharing media.
+- **Media:** relayed from the host's browser, encrypted. See [Media relay](#media-relay). Without the host's files, such as after the host refreshes, media questions are left out.
 - **Scores during a question:** other players' scores and ranking leave out that question's points until the reveal, so a rising score can't show who got it right. Players can see who has answered, but not what.
 - **Scoring:** a wrong answer or no answer scores 0. A right answer scores 500 points plus up to 500 more for speed, falling in a straight line from the moment the question appears to the deadline. Ties are broken by total answer time.
 - **Names:** trimmed, 1 to 20 characters, letters and digits only, with single spaces between words. Unicode letters are allowed, so names such as "José" work. Control characters and invisible characters are rejected. Names must be unique in the room, ignoring case. React escapes names when it shows them, so they can't inject HTML.
 - **Players:** up to 8, including the host.
+
+### Media relay
+
+Built. Photos, GIFs and videos in multiplayer go from the host's browser to the other players through the server, encrypted with the game link's key.
+
+1. **Start:** the host's browser starts the game with `Start(includeMedia)`, true when it has the chat's files. Without them, media questions are left out as before.
+2. **The server asks for files:** the host's view gets `mediaRequests`, listing each message in the game with media, its sealed box and how many files it has. Context messages are included.
+3. **The host's browser sends them:** it opens each box, seals each file's bytes with the label `media:<position>:<index>` and uploads them one at a time with `PUT /api/rooms/{code}/media/{position}/{index}`, sending its player token in `X-Player-Token`. A file it doesn't have, or one over 8 MB, is sent empty, so players stop waiting.
+4. **Players fetch them:** `GET` on the same address returns the sealed file for the current question or an earlier one. It returns `404` while the file hasn't arrived, so the browser retries for up to 30 seconds, and `410` if the file won't come. The browser opens the file and shows it like the player's own.
+
+- **Labels:** a file only opens at its own message and place, so the server can't swap files.
+- **Limits:** 8 MB per file, 32 MB per room and 96 MB across the server, in memory only, gone with the room. Only the host can upload, and only files the game needs. Only players in the room can fetch, and not for questions they haven't reached.
+- **The question timer** starts whether or not the media has arrived. The host's browser sends everything at the start, so it's usually there by the time it's needed.
 
 ### Removing players
 
@@ -556,7 +569,7 @@ Each is a new `IQuestionGenerator`, scoped to the uploaded chat.
 - Quizzes that mix question types.
 - Difficulty settings driven by `SelectionCriteria`.
 - End-of-round summary and shareable score.
-- Photos, GIFs and videos in multiplayer, sent from the host's browser directly to the other players with WebRTC, so they still never reach the server. The server would only pass connection messages between browsers. Some networks block direct connections, which would need a relay (TURN) server, so media questions should be skipped when the connection fails.
+- Sending multiplayer media directly between browsers with WebRTC, with the encrypted relay as a fallback, so most media never reaches the server.
 - Watching a multiplayer game in progress.
 
 ### Hosting

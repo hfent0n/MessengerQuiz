@@ -27,7 +27,10 @@ public sealed record RoomView(
     QuestionView? Question,
     RevealView? Reveal,
     // The latest chat messages, oldest first, still sealed.
-    IReadOnlyList<ChatLine> Chat)
+    IReadOnlyList<ChatLine> Chat,
+    // For the host only: messages whose media the other players still need. The host's browser opens each box,
+    // seals its files with the game link's key and uploads them.
+    IReadOnlyList<MediaRequest>? MediaRequests)
 {
     public static RoomView For(Room room, Player viewer, DateTimeOffset now)
     {
@@ -74,9 +77,16 @@ public sealed record RoomView(
             (room.Endless ? Math.Max(room.QuestionIndex + 1, 1) : room.Questions.Count) * Scoring.MaxPointsPerQuestion,
             showsQuestion ? QuestionView.For(room, question!, viewer, now) : null,
             room.Stage == RoomStage.Reveal ? RevealView.For(room, question!) : null,
-            room.Chat.ToList());
+            room.Chat.ToList(),
+            viewer.IsHost
+                ? room.Media.Missing()
+                    .Select(item => new MediaRequest(item.Position, room.Session.Chat.Messages[item.Position].Sealed, item.Count))
+                    .ToList()
+                : null);
     }
 }
+
+public sealed record MediaRequest(int Position, string Sealed, int Count);
 
 public sealed record PlayerView(
     string Id,

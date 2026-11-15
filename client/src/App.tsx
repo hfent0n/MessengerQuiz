@@ -61,7 +61,13 @@ export default function App() {
       {route.kind === 'privacy' ? (
         <PrivacyScreen />
       ) : route.kind === 'play' ? (
-        <PlayRoute key={route.code} code={route.code} onWipe={wipeChat} onLeave={() => leaveGame(route.code)} />
+        <PlayRoute
+          key={route.code}
+          code={route.code}
+          hostMedia={media}
+          onWipe={wipeChat}
+          onLeave={() => leaveGame(route.code)}
+        />
       ) : !activeChat ? (
         <SelectChatScreen onUploaded={handleUploaded} />
       ) : activeChat.mode === 'single' ? (
@@ -82,7 +88,15 @@ export default function App() {
 }
 
 // A game link. Players who haven't joined from this tab choose a name first.
-function PlayRoute({ code, onWipe, onLeave }: { code: string; onWipe: () => void; onLeave: () => void }) {
+type PlayRouteProps = {
+  code: string
+  // This tab's media, which the host's browser sends to the other players.
+  hostMedia: ReadonlyMap<string, ExportFile>
+  onWipe: () => void
+  onLeave: () => void
+}
+
+function PlayRoute({ code, hostMedia, onWipe, onLeave }: PlayRouteProps) {
   const [token, setToken] = useState(() => loadRoomToken(code))
   // The key that opens the chat's messages comes after the # in the link. Browsers never send that part to the
   // server. It's kept for this tab, so a refresh still works.
@@ -105,7 +119,7 @@ function PlayRoute({ code, onWipe, onLeave }: { code: string; onWipe: () => void
   }
 
   return token ? (
-    <GameScreen code={code} token={token} onWipe={onWipe} onLeave={onLeave} />
+    <GameScreen code={code} token={token} onWipe={onWipe} onLeave={onLeave} hostMedia={hostMedia} />
   ) : (
     <JoinScreen code={code} onJoined={setToken} />
   )

@@ -18,7 +18,7 @@ export default function ModeScreen({ chat, onChoose, onWipe }: Props) {
         </button>
         <button type="button" className="mode-option" onClick={() => onChoose('multi')}>
           <span className="mode-name">Multiplayer</span>
-          <span className="note">Up to 8 people, 10 questions, against the clock. Everyone plays on their own device.</span>
+          <span className="note">Up to 8 people, against the clock. Everyone plays on their own device.</span>
         </button>
       </div>
       <button className="link" onClick={onWipe}>Wipe my chat and exit</button>
