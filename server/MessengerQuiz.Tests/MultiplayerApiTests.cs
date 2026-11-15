@@ -272,7 +272,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         var view = await guest.WaitFor(view => view.GetProperty("chat").GetArrayLength() == 1);
         var line = view.GetProperty("chat")[0];
         Assert.Equal(sealedMessage, line.GetProperty("sealed").GetString());
-        Assert.Equal(PlayerId(host), line.GetProperty("playerId").GetString());
+        Assert.Equal(await PlayerIdAsync(host), line.GetProperty("playerId").GetString());
     }
 
     [Theory]
@@ -320,7 +320,7 @@ public class MultiplayerApiTests : IAsyncLifetime
 
         var reaction = await guest.WaitForReaction();
         Assert.Equal("🔥", reaction.GetProperty("emoji").GetString());
-        Assert.Equal(PlayerId(host), reaction.GetProperty("playerId").GetString());
+        Assert.Equal(await PlayerIdAsync(host), reaction.GetProperty("playerId").GetString());
         Assert.Equal("🔥", (await host.WaitForReaction()).GetProperty("emoji").GetString());
     }
 
@@ -410,7 +410,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         var (host, code, _) = await CreateRoom("Host");
         var guest = await JoinAndConnect(code, "Guest");
         await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
-        var guestId = PlayerId(guest);
+        var guestId = await PlayerIdAsync(guest);
 
         Assert.Null(await host.Hub.InvokeAsync<string?>("Remove", guestId));
 
@@ -429,7 +429,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         var guest = await JoinAndConnect(code, "Guest");
         await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
 
-        Assert.NotNull(await guest.Hub.InvokeAsync<string?>("Remove", PlayerId(host)));
+        Assert.NotNull(await guest.Hub.InvokeAsync<string?>("Remove", await PlayerIdAsync(host)));
     }
 
     [Fact]
@@ -438,7 +438,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         var (host, guest) = await StartTwoPlayerGame();
         await guest.WaitFor(view => Stage(view) == "question");
 
-        Assert.NotNull(await host.Hub.InvokeAsync<string?>("Remove", PlayerId(guest)));
+        Assert.NotNull(await host.Hub.InvokeAsync<string?>("Remove", await PlayerIdAsync(guest)));
     }
 
     [Fact]
@@ -549,7 +549,9 @@ public class MultiplayerApiTests : IAsyncLifetime
         return host;
     }
 
-    private static string PlayerId(TestPlayer player) => player.LastView!.Value.GetProperty("youId").GetString()!;
+    // Waits for the player's first update, which can arrive after other players' updates.
+    private static async Task<string> PlayerIdAsync(TestPlayer player) =>
+        (await player.FirstView()).GetProperty("youId").GetString()!;
 
     private async Task<(TestPlayer Host, TestPlayer Guest)> StartTwoPlayerGame()
     {
@@ -650,7 +652,7 @@ public class MultiplayerApiTests : IAsyncLifetime
             ChatId = chatId;
             hub.On<JsonElement>("room", view =>
             {
-                LastView = view;
+                _firstView.TrySetResult(view);
                 _views.Writer.TryWrite(view);
             });
             hub.On<string>("removed", message => _removed.Writer.TryWrite(message));
@@ -666,7 +668,9 @@ public class MultiplayerApiTests : IAsyncLifetime
         public string Token { get; }
         public string ChatId { get; }
         public string? ConnectError { get; set; }
-        public JsonElement? LastView { get; private set; }
+        private readonly TaskCompletionSource<JsonElement> _firstView = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<JsonElement> FirstView() => _firstView.Task.WaitAsync(TimeSpan.FromSeconds(10));
         public int ReactionCount => Volatile.Read(ref _reactionCount);
 
         private int _reactionCount;
