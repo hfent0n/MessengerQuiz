@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { relayedFiles, sendMedia } from '../chat/mediaRelay'
+import type { ExportFile } from '../chatFiles'
 import { linkWithKey, loadRoomKey, roomKeyText } from '../chat/keys'
 import { openPeople, openQuestion, personName, type OpenedQuestion } from '../chat/openQuestion'
 import GameChat from '../components/GameChat'
@@ -15,17 +17,19 @@ type Props = {
   // The host can end the game by wiping their chat. Other players can only leave.
   onWipe: () => void
   onLeave: () => void
+  // The host's own photos, GIFs and videos, which the host's browser sends to the other players. Empty for other
+  // players, and for a host who has refreshed, since files can't be kept.
+  hostMedia: ReadonlyMap<string, ExportFile>
 }
 
-// Multiplayer has no media, so the thread never needs files.
-const NO_FILES = new Map()
-
-export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
+export default function GameScreen({ code, token, onWipe, onLeave, hostMedia }: Props) {
   const { view, error, reconnecting, reactions, send } = useRoom(code, token)
   const contents = useOpenedContents(code, view)
   const [actionError, setActionError] = useState<string | null>(null)
+  useSendMedia(code, token, contents.key ?? null, view, hostMedia)
+  const files = useQuestionFiles(code, token, contents.key ?? null, view, contents.question, hostMedia)
 
-  async function act(method: Action, ...args: (string | number)[]) {
+  async function act(method: Action, ...args: (string | number | boolean)[]) {
     setActionError(await send(method, ...args))
   }
 
@@ -57,7 +61,7 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
       {reconnecting && <p className="note" role="status">Reconnecting…</p>}
 
       {view.stage === 'lobby' && (
-        <Lobby view={view} onStart={() => act('Start')} onRemove={(playerId) => act('Remove', playerId)} />
+        <Lobby view={view} onStart={() => act('Start', hostMedia.size > 0)} onRemove={(playerId) => act('Remove', playerId)} />
       )}
 
       {playing && (
@@ -68,6 +72,7 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
               view={view}
               people={contents.people}
               opened={contents.question}
+              files={files}
               onAnswer={(option) => act('Answer', option)}
               onReady={() => act('Ready')}
               onDeclare={() => act('Declare')}
@@ -78,7 +83,7 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
         </div>
       )}
 
-      {view.stage === 'finished' && <Results view={view} onRematch={() => act('Start')} />}
+      {view.stage === 'finished' && <Results view={view} onRematch={() => act('Start', hostMedia.size > 0)} />}
 
       {actionError && <p role="alert" className="error">{actionError}</p>}
 
@@ -98,6 +103,56 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
       )}
     </section>
   )
+}
+
+// The host's browser sends the media the other players need, one message at a time. The server asks for it in the
+// host's view, and stops asking once each file has arrived.
+function useSendMedia(
+  code: string,
+  token: string,
+  key: CryptoKey | null,
+  view: RoomView | null,
+  hostMedia: ReadonlyMap<string, ExportFile>,
+) {
+  const started = useRef(new Set<number>())
+  const queue = useRef<Promise<void>>(Promise.resolve())
+  const requests = view?.mediaRequests
+
+  useEffect(() => {
+    if (!key || !requests) return
+    for (const request of requests) {
+      if (started.current.has(request.position)) continue
+      started.current.add(request.position)
+      // One at a time, so large files don't all sit in memory at once.
+      queue.current = queue.current.then(() => sendMedia(code, token, key, request, hostMedia).catch(() => undefined))
+    }
+  }, [code, token, key, requests, hostMedia])
+}
+
+// The current question's media. The host shows their own files. Other players get files that wait for the host's
+// browser to send them, then open with the game link's key.
+function useQuestionFiles(
+  code: string,
+  token: string,
+  key: CryptoKey | null,
+  view: RoomView | null,
+  opened: OpenedQuestion | null,
+  hostMedia: ReadonlyMap<string, ExportFile>,
+): ReadonlyMap<string, ExportFile> {
+  const question = view?.question
+  const youAreHost = view?.youAreHost ?? false
+  return useMemo(() => {
+    if (!key || !question || !opened) return new Map()
+    if (youAreHost) return hostMedia
+
+    const messages = [
+      { position: question.position, media: opened.media },
+      ...question.context.map((item, index) => ({ position: item.position, media: opened.context[index]?.media ?? [] })),
+    ]
+    return new Map(messages.flatMap(({ position, media }) => [...relayedFiles(code, token, key, position, media)]))
+    // The question object is new with every update, so only its message is compared.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, token, key, question?.position, opened, youAreHost, hostMedia])
 }
 
 // Message text and names arrive sealed. The key came with the game link, after the #, which is never sent to the
@@ -260,28 +315,34 @@ type RoundProps = {
   view: RoomView
   people: string[]
   opened: OpenedQuestion
+  files: ReadonlyMap<string, ExportFile>
   onAnswer: (option: number) => void
   onReady: () => void
   onDeclare: () => void
 }
 
-function Round({ view, people, opened, onAnswer, onReady, onDeclare }: RoundProps) {
+function Round({ view, people, opened, files, onAnswer, onReady, onDeclare }: RoundProps) {
   const question = view.question!
   const reveal = view.reveal
   const you = view.players.find((player) => player.id === view.youId)
-  // Multiplayer has no media, since it only exists on the host's device. Context with media shows a placeholder.
-  const context = opened.context.map((message) => ({ ...message, media: [] }))
+  const context = opened.context
   const pickers = (option: number) =>
     view.players.filter((player) => reveal?.picks.some((pick) => pick.playerId === player.id && pick.option === option))
   const waitingFor = view.players.filter((player) => player.connected && !(reveal ? player.ready : player.answered))
 
   return (
     <div className="round">
-      <p className="prompt">{questionPrompt({ text: opened.text, media: [], context })}</p>
+      <p className="prompt">{questionPrompt({ text: opened.text, media: opened.media, context })}</p>
       {view.stage === 'question' && (
         <Countdown key={view.questionNumber} remaining={question.remainingMilliseconds} total={view.timeLimitSeconds * 1000} />
       )}
-      <MessageThread text={opened.text} media={[]} context={context} files={NO_FILES} />
+      <MessageThread
+        text={opened.text}
+        media={opened.media}
+        context={context}
+        files={files}
+        missingNote={view.youAreHost ? undefined : "The host couldn't send this one."}
+      />
 
       <div className="options">
         {question.options.map((option) => (

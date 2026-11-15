@@ -94,8 +94,8 @@ export default function HostSetupScreen({ chat, onBack }: Props) {
         </fieldset>
 
         <p className="note">
-          Multiplayer only uses text messages. Photos and videos stay on your device, so the other players can't see
-          them.
+          Photos, GIFs and short videos are encrypted on your device with the game link's key and sent to the other
+          players. The server can't see them. Files over 8 MB are skipped.
         </p>
 
         {error && <p role="alert" className="error">{error}</p>}

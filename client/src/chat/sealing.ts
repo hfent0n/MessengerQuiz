@@ -13,7 +13,13 @@ export const labels = {
   message: (position: number) => `message:${position}`,
   // A multiplayer chat message, labelled with its sender so it can't be passed off as someone else's.
   chatLine: (playerId: string) => `chat:${playerId}`,
+  // A photo, GIF or video relayed to other players, labelled with its message and its place among that message's
+  // files, so the server can't swap them.
+  media: (position: number, index: number) => `media:${position}:${index}`,
 }
+
+// What sealing adds to a file: the IV and the authentication tag.
+export const SEAL_OVERHEAD_BYTES = 28
 
 // Opening failed: the box was changed, moved or sealed with another key.
 export class SealError extends Error {}
@@ -38,22 +44,28 @@ const decoder = new TextDecoder()
 
 // Returns base64url of the IV followed by the ciphertext and its 16-byte tag.
 export async function seal(key: CryptoKey, label: string, value: unknown): Promise<string> {
-  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES))
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: ALGORITHM, iv, additionalData: encoder.encode(label) },
-    key,
-    encoder.encode(JSON.stringify(value)),
-  )
-
-  const box = new Uint8Array(IV_BYTES + ciphertext.byteLength)
-  box.set(iv)
-  box.set(new Uint8Array(ciphertext), IV_BYTES)
-  return toBase64Url(box)
+  return toBase64Url(await sealBytes(key, label, encoder.encode(JSON.stringify(value))))
 }
 
 export async function open<T>(key: CryptoKey, label: string, sealed: string): Promise<T> {
   const box = fromBase64Url(sealed)
-  if (!box || box.length <= IV_BYTES) throw new SealError('A message is damaged.')
+  if (!box) throw new SealError('A message is damaged.')
+  return JSON.parse(decoder.decode(await openBytes(key, label, box))) as T
+}
+
+// The same for raw bytes, such as a photo: the IV followed by the ciphertext and its tag.
+export async function sealBytes(key: CryptoKey, label: string, bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES))
+  const ciphertext = await crypto.subtle.encrypt({ name: ALGORITHM, iv, additionalData: encoder.encode(label) }, key, bytes)
+
+  const box = new Uint8Array(IV_BYTES + ciphertext.byteLength)
+  box.set(iv)
+  box.set(new Uint8Array(ciphertext), IV_BYTES)
+  return box
+}
+
+export async function openBytes(key: CryptoKey, label: string, box: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+  if (box.length <= IV_BYTES) throw new SealError('A message is damaged.')
 
   try {
     const plaintext = await crypto.subtle.decrypt(
@@ -61,7 +73,7 @@ export async function open<T>(key: CryptoKey, label: string, sealed: string): Pr
       key,
       box.subarray(IV_BYTES),
     )
-    return JSON.parse(decoder.decode(plaintext)) as T
+    return new Uint8Array(plaintext)
   } catch {
     throw new SealError("A message couldn't be decrypted. It may have been changed.")
   }

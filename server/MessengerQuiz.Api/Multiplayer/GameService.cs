@@ -190,22 +190,102 @@ public sealed class GameService : IDisposable
         await BroadcastAsync(room);
     }
 
-    public Task<string?> StartAsync(string connectionId) => ActAsync(connectionId, (room, player) =>
+    // includeMedia is whether the host's browser has the chat's media files to send. Without them, questions with
+    // photos, GIFs or videos are left out.
+    public Task<string?> StartAsync(string connectionId, bool includeMedia) => ActAsync(connectionId, (room, player) =>
     {
         if (!room.CanStart(player))
         {
             return player.IsHost ? "At least one other player needs to join first." : "Only the host can start the game.";
         }
 
-        var (questions, used) = PickQuestions(room);
+        var (questions, used) = PickQuestions(room, includeMedia);
         if (questions.Count == 0)
         {
-            return "This chat has no more questions without photos or videos.";
+            return includeMedia
+                ? "This chat has no more questions."
+                : "This chat has no more questions without photos or videos.";
         }
 
         room.Start(questions, used, Now);
+        if (includeMedia)
+        {
+            room.Media.Want(questions);
+        }
+
         return null;
     });
+
+    // Only the host sends media, and only for messages in the game. An empty file means the host couldn't send it.
+    public async Task<MediaUpload?> UploadMediaAsync(string code, string token, int position, int index, byte[]? file)
+    {
+        var room = _rooms.Find(code);
+        if (room is null)
+        {
+            return null;
+        }
+
+        MediaUpload outcome;
+        lock (room.Gate)
+        {
+            var player = room.Players.FirstOrDefault(candidate => RoomStore.TokensMatch(candidate.Token, token));
+            if (player is not { IsHost: true } || room.Stage == RoomStage.Ended)
+            {
+                return null;
+            }
+
+            outcome = room.Media.Store(
+                position, index, file, _options.MaxRelayedFileBytes, _options.MaxRelayedRoomBytes, ReserveServerBytes);
+        }
+
+        if (outcome == MediaUpload.Stored)
+        {
+            // The host's list of files still to send has changed.
+            await BroadcastAsync(room);
+        }
+
+        return outcome;
+    }
+
+    // Any player in the room can fetch media for the current question or an earlier one.
+    public MediaLookup? FindMedia(string code, string token, int position, int index, out byte[]? file)
+    {
+        file = null;
+        var room = _rooms.Find(code);
+        if (room is null)
+        {
+            return null;
+        }
+
+        lock (room.Gate)
+        {
+            if (!room.Players.Any(candidate => RoomStore.TokensMatch(candidate.Token, token)))
+            {
+                return null;
+            }
+
+            return room.Media.Find(position, index, room.QuestionIndex, out file);
+        }
+    }
+
+    private long _relayedBytes;
+
+    private bool ReserveServerBytes(long bytes)
+    {
+        while (true)
+        {
+            var current = Interlocked.Read(ref _relayedBytes);
+            if (current + bytes > _options.MaxRelayedServerBytes)
+            {
+                return false;
+            }
+
+            if (Interlocked.CompareExchange(ref _relayedBytes, current + bytes, current) == current)
+            {
+                return true;
+            }
+        }
+    }
 
     public Task<string?> DeclareAsync(string connectionId) => ActAsync(connectionId, (room, player) =>
         room.Declare(player) ? null : "The host can end an endless game after a question's answer is shown.");
@@ -337,13 +417,12 @@ public sealed class GameService : IDisposable
         return error;
     }
 
-    // The same selection as single player, without media, which only the host has. Players' browsers show media in
-    // context as a placeholder. Messages asked in an earlier game in this room aren't used again.
-    private (List<WhoSaidThisQuestion> Questions, List<int> Used) PickQuestions(Room room)
+    // The same selection as single player. Media questions are only included when the host can send the files. Messages asked in an earlier game in this room aren't used again.
+    private (List<WhoSaidThisQuestion> Questions, List<int> Used) PickQuestions(Room room, bool includeMedia)
     {
         var chat = room.Session.Chat;
         var candidates = room.Session.Eligible
-            .Where(message => message.MediaCount == 0 && !room.AskedPositions.Contains(message.Position))
+            .Where(message => (includeMedia || message.MediaCount == 0) && !room.AskedPositions.Contains(message.Position))
             .ToList();
         var questions = new List<WhoSaidThisQuestion>();
         var used = new List<int>();
@@ -411,6 +490,7 @@ public sealed class GameService : IDisposable
             }
 
             _rooms.Remove(room);
+            Interlocked.Add(ref _relayedBytes, -room.Media.Bytes);
             if (_timers.TryRemove(room.Code, out var timer))
             {
                 timer.Timer.Dispose();

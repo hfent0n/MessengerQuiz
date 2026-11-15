@@ -55,6 +55,9 @@ public sealed class Room(
     public IReadOnlySet<string> ReadyPlayerIds => _ready;
     public IReadOnlyList<ChatLine> Chat => _chat;
 
+    // Photos, GIFs and videos relayed from the host to the other players.
+    public RoomMedia Media { get; } = new();
+
     public WhoSaidThisQuestion? CurrentQuestion =>
         QuestionIndex >= 0 && QuestionIndex < _questions.Count ? _questions[QuestionIndex] : null;
 

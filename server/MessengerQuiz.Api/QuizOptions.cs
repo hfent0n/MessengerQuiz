@@ -48,6 +48,12 @@ public sealed class QuizOptions
     public int MaxRoomsPerChat { get; set; } = 5;
     public int RoomRequestsPerMinutePerIp { get; set; } = 20;
 
+    // Media relayed from the host to other players: the largest file, and the most per room and on the server.
+    // Sized for a 512 MB instance. Larger files, such as most videos, are skipped.
+    public long MaxRelayedFileBytes { get; set; } = 8 * 1024 * 1024;
+    public long MaxRelayedRoomBytes { get; set; } = 32 * 1024 * 1024;
+    public long MaxRelayedServerBytes { get; set; } = 96 * 1024 * 1024;
+
     // A sealed chat message, in characters. Fits 200 characters of text, even in emoji.
     public int MaxSealedChatLength { get; set; } = 1_600;
 

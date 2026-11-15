@@ -1,4 +1,5 @@
 import { ApiError } from './api'
+import type { MediaRequest } from './chat/mediaRelay'
 import type { SealedContext } from './chat/openQuestion'
 
 export const TIME_LIMITS = [10, 20, 30, 60] as const
@@ -64,6 +65,8 @@ export type RoomView = {
   } | null
   // The latest chat messages, oldest first, sealed with the game link's key.
   chat: ChatLine[]
+  // For the host only: messages whose photos, GIFs and videos the other players still need.
+  mediaRequests: MediaRequest[] | null
 }
 
 export type ChatLine = { id: number; playerId: string; sealed: string }

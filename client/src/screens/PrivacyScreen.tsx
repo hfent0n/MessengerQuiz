@@ -35,7 +35,10 @@ export default function PrivacyScreen() {
       <h3>Never leaves your device</h3>
       <ul>
         <li>Your Facebook download. Only the chat you choose is read.</li>
-        <li>Photos, GIFs and videos. They're shown straight from your files.</li>
+        <li>
+          Photos, GIFs and videos, in single player. They're shown straight from your files. In multiplayer, see
+          below.
+        </li>
         <li>The key, unless you share a multiplayer link</li>
       </ul>
 
@@ -50,7 +53,9 @@ export default function PrivacyScreen() {
       <p>
         A game link ends with the key, after a <code>#</code>. Browsers never send that part to the server, but anyone
         with the link can read the game's questions, so only share it with people in the chat. Players' chat messages
-        are encrypted with the same key, so the server can't read those either. It does see which quick reactions
+        are encrypted with the same key, so the server can't read those either. So are photos, GIFs and videos: the
+        host's browser encrypts each one and sends it through the server to the other players, so the server only
+        sees its size. They're held in memory for the game only, and files over 8 MB are skipped. It does see which quick reactions
         players send.
       </p>
 

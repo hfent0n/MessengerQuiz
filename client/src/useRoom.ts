@@ -10,7 +10,7 @@ type Connection = {
   // Reactions from the last few seconds, including this player's own.
   reactions: Reaction[]
   // Sends an action. Resolves to an error to show, or null.
-  send: (method: Action, ...args: (string | number)[]) => Promise<string | null>
+  send: (method: Action, ...args: (string | number | boolean)[]) => Promise<string | null>
 }
 
 export type Action = 'Start' | 'Answer' | 'Ready' | 'Chat' | 'React' | 'Declare' | 'Remove'
@@ -75,7 +75,7 @@ export function useRoom(code: string, token: string): Connection {
     }
   }, [code, token])
 
-  const send = useCallback(async (method: Action, ...args: (string | number)[]) => {
+  const send = useCallback(async (method: Action, ...args: (string | number | boolean)[]) => {
     const connection = hub.current
     if (!connection) return 'Not connected yet.'
     try {

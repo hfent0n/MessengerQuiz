@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { exportKey, fromBase64Url, importKey, labels, newChatKey, open, seal, SealError, toBase64Url } from './sealing'
+import { exportKey, fromBase64Url, importKey, labels, newChatKey, open, openBytes, seal, SEAL_OVERHEAD_BYTES, sealBytes, SealError, toBase64Url } from './sealing'
 
 describe('sealing', () => {
   it('opens what it sealed', async () => {
@@ -75,5 +75,19 @@ describe('sealing', () => {
 
   it('rejects keys of the wrong length', async () => {
     await expect(importKey('abc')).rejects.toThrow(SealError)
+  })
+})
+
+describe('sealing files', () => {
+  it('opens a file only under its own message and place', async () => {
+    const key = await newChatKey()
+    const photo = new Uint8Array([137, 80, 78, 71, 1, 2, 3])
+
+    const sealed = await sealBytes(key, labels.media(5, 0), photo)
+
+    expect(sealed.length).toBe(photo.length + SEAL_OVERHEAD_BYTES)
+    expect(await openBytes(key, labels.media(5, 0), sealed)).toEqual(photo)
+    await expect(openBytes(key, labels.media(5, 1), sealed)).rejects.toThrow(SealError)
+    await expect(openBytes(key, labels.media(6, 0), sealed)).rejects.toThrow(SealError)
   })
 })

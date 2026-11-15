@@ -226,8 +226,8 @@ public class MultiplayerApiTests : IAsyncLifetime
         var (host, code, _) = await CreateRoom("Host");
         var guest = await JoinAndConnect(code, "Guest");
 
-        Assert.NotNull(await guest.Hub.InvokeAsync<string?>("Start"));
-        Assert.Null(await host.Hub.InvokeAsync<string?>("Start"));
+        Assert.NotNull(await guest.Hub.InvokeAsync<string?>("Start", false));
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Start", false));
     }
 
     [Fact]
@@ -236,7 +236,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         var (host, guest) = await StartTwoPlayerGame();
         var firstGame = await PlayThrough(host, guest);
 
-        Assert.Null(await host.Hub.InvokeAsync<string?>("Start"));
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Start", false));
         var secondGame = await PlayThrough(host, guest);
 
         Assert.Empty(firstGame.Intersect(secondGame));
@@ -272,7 +272,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         var view = await guest.WaitFor(view => view.GetProperty("chat").GetArrayLength() == 1);
         var line = view.GetProperty("chat")[0];
         Assert.Equal(sealedMessage, line.GetProperty("sealed").GetString());
-        Assert.Equal(PlayerId(host), line.GetProperty("playerId").GetString());
+        Assert.Equal(await PlayerIdAsync(host), line.GetProperty("playerId").GetString());
     }
 
     [Theory]
@@ -320,7 +320,7 @@ public class MultiplayerApiTests : IAsyncLifetime
 
         var reaction = await guest.WaitForReaction();
         Assert.Equal("🔥", reaction.GetProperty("emoji").GetString());
-        Assert.Equal(PlayerId(host), reaction.GetProperty("playerId").GetString());
+        Assert.Equal(await PlayerIdAsync(host), reaction.GetProperty("playerId").GetString());
         Assert.Equal("🔥", (await host.WaitForReaction()).GetProperty("emoji").GetString());
     }
 
@@ -361,7 +361,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         // The lobby shows the chosen length before any questions are picked.
         Assert.Equal(questionCount, lobby.GetProperty("questionLimit").GetInt32());
 
-        Assert.Null(await host.Hub.InvokeAsync<string?>("Start"));
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Start", false));
 
         var view = await guest.WaitFor(view => Stage(view) == "question");
         Assert.Equal(questionCount, view.GetProperty("questionCount").GetInt32());
@@ -387,7 +387,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         var host = await CreateRoomWith(new { name = "Host", timeLimitSeconds = 20, endless = true });
         var guest = await JoinAndConnect(host.Code, "Guest");
         await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
-        Assert.Null(await host.Hub.InvokeAsync<string?>("Start"));
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Start", false));
 
         var question = await host.WaitFor(view => Stage(view) == "question");
         // The test chat has 40 text messages, and every one is available.
@@ -410,7 +410,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         var (host, code, _) = await CreateRoom("Host");
         var guest = await JoinAndConnect(code, "Guest");
         await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
-        var guestId = PlayerId(guest);
+        var guestId = await PlayerIdAsync(guest);
 
         Assert.Null(await host.Hub.InvokeAsync<string?>("Remove", guestId));
 
@@ -429,7 +429,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         var guest = await JoinAndConnect(code, "Guest");
         await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
 
-        Assert.NotNull(await guest.Hub.InvokeAsync<string?>("Remove", PlayerId(host)));
+        Assert.NotNull(await guest.Hub.InvokeAsync<string?>("Remove", await PlayerIdAsync(host)));
     }
 
     [Fact]
@@ -438,7 +438,103 @@ public class MultiplayerApiTests : IAsyncLifetime
         var (host, guest) = await StartTwoPlayerGame();
         await guest.WaitFor(view => Stage(view) == "question");
 
-        Assert.NotNull(await host.Hub.InvokeAsync<string?>("Remove", PlayerId(guest)));
+        Assert.NotNull(await host.Hub.InvokeAsync<string?>("Remove", await PlayerIdAsync(guest)));
+    }
+
+    [Fact]
+    public async Task TheHostRelaysMediaToTheOtherPlayers()
+    {
+        var (host, guest, code) = await StartMediaGame();
+        var question = await guest.WaitFor(view => Stage(view) == "question");
+        var position = question.GetProperty("question").GetProperty("position").GetInt32();
+
+        // Only the host is asked for files, and the question's own file is among them.
+        Assert.Equal(JsonValueKind.Null, question.GetProperty("mediaRequests").ValueKind);
+        var requests = (await host.WaitFor(view => view.GetProperty("mediaRequests").GetArrayLength() > 0)).GetProperty("mediaRequests");
+        Assert.Contains(requests.EnumerateArray(), request => request.GetProperty("position").GetInt32() == position);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await GetMedia(code, guest.Token, position, 0)).StatusCode);
+
+        var file = System.Text.Encoding.UTF8.GetBytes(TestChats.Sealed("an encrypted photo"));
+        Assert.Equal(HttpStatusCode.NoContent, (await PutMedia(code, host.Token, position, 0, file)).StatusCode);
+
+        var fetched = await GetMedia(code, guest.Token, position, 0);
+        Assert.Equal(HttpStatusCode.OK, fetched.StatusCode);
+        Assert.Equal(file, await fetched.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task OnlyTheHostCanSendMedia()
+    {
+        var (host, guest, code) = await StartMediaGame();
+        var position = (await guest.WaitFor(view => Stage(view) == "question")).GetProperty("question").GetProperty("position").GetInt32();
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await PutMedia(code, guest.Token, position, 0, [1, 2, 3])).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await PutMedia(code, "not-a-token", position, 0, [1, 2, 3])).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await GetMedia(code, "not-a-token", position, 0)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await PutMedia(code, host.Token, 9_999, 0, [1, 2, 3])).StatusCode);
+    }
+
+    [Fact]
+    public async Task FilesTheHostCantSendAreGoneForGood()
+    {
+        var (host, guest, code) = await StartMediaGame();
+        var position = (await guest.WaitFor(view => Stage(view) == "question")).GetProperty("question").GetProperty("position").GetInt32();
+
+        Assert.Equal(HttpStatusCode.NoContent, (await PutMedia(code, host.Token, position, 0, [])).StatusCode);
+
+        Assert.Equal(HttpStatusCode.Gone, (await GetMedia(code, guest.Token, position, 0)).StatusCode);
+    }
+
+    [Fact]
+    public async Task WithoutTheHostsFilesMediaQuestionsAreLeftOut()
+    {
+        var chatId = await UploadMediaChat();
+        var host = await CreateRoomFor(chatId);
+        await JoinAndConnect(host.Code, "Guest");
+        await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
+
+        // Every question in this chat has a photo.
+        Assert.Equal("This chat has no more questions without photos or videos.", await host.Hub.InvokeAsync<string?>("Start", false));
+    }
+
+    private async Task<(TestPlayer Host, TestPlayer Guest, string Code)> StartMediaGame()
+    {
+        var host = await CreateRoomFor(await UploadMediaChat());
+        var guest = await JoinAndConnect(host.Code, "Guest");
+        await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Start", true));
+        return (host, guest, host.Code);
+    }
+
+    // Every message has one photo, so every question is a media question.
+    private async Task<string> UploadMediaChat()
+    {
+        var upload = TestChats.QuizzableUpload(people: 3, messagesPerPerson: 6);
+        upload = upload with { Messages = upload.Messages!.Select(message => message with { Media = 1 }).ToList() };
+        var response = await _factory.CreateClient().PostAsync("/api/chats", TestChats.Content(upload));
+        return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("chatId").GetString()!;
+    }
+
+    private async Task<TestPlayer> CreateRoomFor(string chatId)
+    {
+        var response = await PostRoom(chatId, "Host", timeLimitSeconds: 20);
+        var joined = (await response.Content.ReadFromJsonAsync<Joined>())!;
+        return await Connect(joined.Code, joined.PlayerToken, chatId);
+    }
+
+    private Task<HttpResponseMessage> PutMedia(string code, string token, int position, int index, byte[] file)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/rooms/{code}/media/{position}/{index}") { Content = new ByteArrayContent(file) };
+        request.Headers.Add("X-Player-Token", token);
+        return _factory.CreateClient().SendAsync(request);
+    }
+
+    private Task<HttpResponseMessage> GetMedia(string code, string token, int position, int index)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/api/rooms/{code}/media/{position}/{index}");
+        request.Headers.Add("X-Player-Token", token);
+        return _factory.CreateClient().SendAsync(request);
     }
 
     private async Task<TestPlayer> CreateRoomWith(object body)
@@ -453,7 +549,9 @@ public class MultiplayerApiTests : IAsyncLifetime
         return host;
     }
 
-    private static string PlayerId(TestPlayer player) => player.LastView!.Value.GetProperty("youId").GetString()!;
+    // Waits for the player's first update, which can arrive after other players' updates.
+    private static async Task<string> PlayerIdAsync(TestPlayer player) =>
+        (await player.FirstView()).GetProperty("youId").GetString()!;
 
     private async Task<(TestPlayer Host, TestPlayer Guest)> StartTwoPlayerGame()
     {
@@ -461,7 +559,7 @@ public class MultiplayerApiTests : IAsyncLifetime
         var guest = await JoinAndConnect(code, "Guest");
         await host.WaitFor(view => view.GetProperty("players").GetArrayLength() == 2);
 
-        Assert.Null(await host.Hub.InvokeAsync<string?>("Start"));
+        Assert.Null(await host.Hub.InvokeAsync<string?>("Start", false));
         return (host, guest);
     }
 
@@ -554,7 +652,7 @@ public class MultiplayerApiTests : IAsyncLifetime
             ChatId = chatId;
             hub.On<JsonElement>("room", view =>
             {
-                LastView = view;
+                _firstView.TrySetResult(view);
                 _views.Writer.TryWrite(view);
             });
             hub.On<string>("removed", message => _removed.Writer.TryWrite(message));
@@ -570,7 +668,9 @@ public class MultiplayerApiTests : IAsyncLifetime
         public string Token { get; }
         public string ChatId { get; }
         public string? ConnectError { get; set; }
-        public JsonElement? LastView { get; private set; }
+        private readonly TaskCompletionSource<JsonElement> _firstView = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<JsonElement> FirstView() => _firstView.Task.WaitAsync(TimeSpan.FromSeconds(10));
         public int ReactionCount => Volatile.Read(ref _reactionCount);
 
         private int _reactionCount;

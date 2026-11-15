@@ -29,7 +29,7 @@ Right now there's one question type, **"Who said this?"**. It picks the chat's m
 How your chat is handled:
 
 - **Only the chat you choose is read,** in your browser. Nothing else in your download is touched, and the pages themselves are never sent.
-- **Photos, GIFs and videos never leave your device.** They're shown straight from your zip files.
+- **In single player, photos, GIFs and videos never leave your device.** They're shown straight from your zip files. In multiplayer, the host's browser encrypts each one with the game link's key and sends it through the server to the other players, so the server only sees its size. Files over 8 MB are skipped.
 - **Chats are held in memory only.** They're never saved to disk or a database, and never logged. A chat is deleted after 2 hours without use, when you press **Wipe my chat and exit**, or when the server restarts. The key stays in your browser tab and goes when you close it.
 - **Each chat is private to the tab that uploaded it.** The server only answers requests that include the chat's secret ID.
 - **Multiplayer links carry the key** after a `#`, which browsers never send to the server. Anyone with the link can read the game's questions, so only share it with people in the chat.
