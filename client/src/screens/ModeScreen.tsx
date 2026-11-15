@@ -1,15 +1,41 @@
-import type { ActiveChat } from '../activeChat'
+import type { ActiveChat, QuestionSelection } from '../activeChat'
 
 type Props = {
   chat: ActiveChat
   onChoose: (mode: 'single' | 'multi') => void
+  onSelect: (selection: QuestionSelection) => void
   onWipe: () => void
 }
 
-export default function ModeScreen({ chat, onChoose, onWipe }: Props) {
+const SELECTIONS: { value: QuestionSelection; name: string; note: string }[] = [
+  { value: 'reacted', name: 'Most reacted', note: "The chat's best-known moments." },
+  { value: 'random', name: 'Random', note: 'Any message, shown with the run of messages that led to it.' },
+]
+
+export default function ModeScreen({ chat, onChoose, onSelect, onWipe }: Props) {
+  const selection = chat.selection ?? 'reacted'
+
   return (
     <section>
       <h2>{chat.title}</h2>
+      <fieldset className="field">
+        <legend className="field-label">Which messages?</legend>
+        <div className="choices">
+          {SELECTIONS.map((option) => (
+            <label key={option.value} className={option.value === selection ? 'choice chosen' : 'choice'}>
+              <input
+                type="radio"
+                name="selection"
+                className="visually-hidden"
+                checked={option.value === selection}
+                onChange={() => onSelect(option.value)}
+              />
+              {option.name}
+            </label>
+          ))}
+        </div>
+        <p className="note">{SELECTIONS.find((option) => option.value === selection)!.note}</p>
+      </fieldset>
       <p>How do you want to play?</p>
       <div className="mode-options">
         <button type="button" className="mode-option" onClick={() => onChoose('single')}>

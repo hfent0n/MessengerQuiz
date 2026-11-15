@@ -5,5 +5,5 @@ namespace MessengerQuiz.Api.Questions;
 public interface IQuestionGenerator<out TQuestion> where TQuestion : class
 {
     // Returns null when the chat has no questions left.
-    TQuestion? Next(ChatSession session);
+    TQuestion? Next(ChatSession session, QuestionSelection selection = QuestionSelection.Reacted);
 }

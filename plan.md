@@ -155,6 +155,8 @@ A made-up chat, "Flat 4B", so people without a Facebook export can try the game.
 
 ### `GET /api/questions/who-said-this`
 
+`?selection=random` takes questions from a random sample instead of the most reacted. See [Random messages](#random-messages).
+
 ```json
 {
   "position": 1042,
@@ -457,6 +459,16 @@ Built, including CI/CD. Step-by-step setup is in [`deploy/README.md`](deploy/REA
 - **CD:** [`deploy.yml`](.github/workflows/deploy.yml) runs when CI passes on a push to `main`, or by hand. It deploys the commit CI checked, not whatever `main` points to by then. It builds the image, pushes it to Artifact Registry tagged with the commit, deploys it with the settings kept in the workflow, and waits until `/api/health` reports that commit as `version`, from `APP_VERSION`. Deploys run one at a time and are never cancelled halfway.
 - **Signing in from GitHub:** Workload Identity Federation swaps GitHub's OIDC token for a short-lived Google token, so no key is stored. The provider only accepts this repository's numeric ID on `refs/heads/main`. The ID can't be reused the way a renamed repository's name can. The `github-deployer` account can only deploy Cloud Run revisions, run them as `messenger-quiz-run`, and push to the image repository.
 - **Tests:** server tests for the health check and its version, security headers, the origin check, unknown API paths, game links and cache headers, and per-visitor rate limits with faked addresses. The billing function's alert handling has `node --test` tests.
+
+## Random messages
+
+Built. After choosing a chat, the player picks **Most reacted**, the default, or **Random**, for both single player and multiplayer.
+
+- **Most reacted:** the existing pool, the top 5% of messages by reactions with a floor of 50.
+- **Random:** any message that can be a question, whatever its reactions, as long as it **ends its run**: the next message is from someone else, is a system line, comes more than 2 minutes later, or there isn't one. The run's earlier messages are its context, so a random question shows the conversation that led up to it, never a message cut off mid-run.
+- **Fairness:** the sender is still picked first, so the chattiest person isn't the answer most of the time. Wrong answers come from people who sent a message in the pool being used.
+- **API:** `?selection=random` on the question endpoint, and `selection: "random"` when creating a room. The room view has `selection`, and the lobby shows it.
+- **Tests:** run endings, the random pool ignoring reactions and skipping mid-run messages, options from the random pool, an upload of runs of three where every random question is a run's last message with two messages of context, and unknown selections rejected.
 
 ## Going live
 

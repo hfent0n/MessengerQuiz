@@ -1,3 +1,4 @@
+import type { QuestionSelection } from './activeChat'
 import { ApiError } from './api'
 import type { MediaRequest } from './chat/mediaRelay'
 import type { SealedContext } from './chat/openQuestion'
@@ -47,6 +48,7 @@ export type RoomView = {
   // The length the host chose, shown in the lobby. Null for endless.
   questionLimit: number | null
   endless: boolean
+  selection: QuestionSelection
   // What a full score bar stands for. In endless mode, the questions asked so far.
   maxScore: number
   question: {
@@ -86,9 +88,10 @@ export async function createRoom(
   name: string,
   timeLimitSeconds: number,
   questionCount: QuestionCount,
+  selection: QuestionSelection = 'reacted',
 ): Promise<JoinedRoom> {
   const length = questionCount === 'endless' ? { endless: true } : { questionCount }
-  return postRoom('/api/rooms', { name, timeLimitSeconds, ...length }, { 'X-Chat-Id': chatId })
+  return postRoom('/api/rooms', { name, timeLimitSeconds, selection, ...length }, { 'X-Chat-Id': chatId })
 }
 
 export async function joinRoom(code: string, name: string): Promise<JoinedRoom> {

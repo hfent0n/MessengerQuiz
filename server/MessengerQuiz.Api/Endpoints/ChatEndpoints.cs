@@ -71,12 +71,12 @@ public static class ChatEndpoints
                 "This chat doesn't have enough messages from different people for a quiz.");
         }
 
-        return Store(chat, eligible, store);
+        return Store(chat, eligible, selector.SelectRandomPool(chat), store);
     }
 
-    private static IResult Store(Chat chat, IReadOnlyList<Message> eligible, ChatStore store)
+    private static IResult Store(Chat chat, IReadOnlyList<Message> eligible, IReadOnlyList<Message> randomPool, ChatStore store)
     {
-        var session = new ChatSession(chat, eligible);
+        var session = new ChatSession(chat, eligible, randomPool);
         if (!store.TryAdd(session))
         {
             return Problem(StatusCodes.Status503ServiceUnavailable, "The server is full. Try again later.");

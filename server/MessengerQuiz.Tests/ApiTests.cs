@@ -101,6 +101,39 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
         Assert.Equal("second chat", Label((await GetQuestion(client, second.ChatId)).Sealed));
     }
 
+    [Fact]
+    public async Task RandomQuestionsAreTheLastMessageOfARun()
+    {
+        var client = _factory.CreateClient();
+        // Each person sends a run of three. Only the last of each run can be a random question.
+        var messages = Enumerable.Range(0, 12).SelectMany(round => Enumerable.Range(0, 3).SelectMany(sender =>
+            Enumerable.Range(0, 3).Select(step => Uploaded(
+                sender, $"{(step == 2 ? "end" : "middle")} {round}-{sender}", reactions: step == 2 ? 0 : 9,
+                minute: round * 30 + sender * 5 + step))));
+        var chat = await Send(client, Upload(3, messages));
+
+        var labels = new List<string>();
+        HttpResponseMessage response;
+        while ((response = await SendQuestionRequest(client, chat.ChatId, "random")).StatusCode == HttpStatusCode.OK)
+        {
+            var question = (await response.Content.ReadFromJsonAsync<WhoSaidThisQuestion>())!;
+            labels.Add(Label(question.Sealed));
+            Assert.Equal(2, question.Context.Count);
+        }
+
+        Assert.Equal(36, labels.Count);
+        Assert.All(labels, label => Assert.StartsWith("end", label));
+    }
+
+    [Fact]
+    public async Task RejectsAnUnknownSelection()
+    {
+        var client = _factory.CreateClient();
+        var chat = await Send(client, QuizzableUpload());
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await SendQuestionRequest(client, chat.ChatId, "loudest")).StatusCode);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -311,9 +344,9 @@ public class ApiTests(WebApplicationFactory<Program> factory) : IClassFixture<We
         return (await response.Content.ReadFromJsonAsync<ChatCreated>())!;
     }
 
-    private static async Task<HttpResponseMessage> SendQuestionRequest(HttpClient client, string chatId)
+    private static async Task<HttpResponseMessage> SendQuestionRequest(HttpClient client, string chatId, string? selection = null)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, QuestionUrl);
+        using var request = new HttpRequestMessage(HttpMethod.Get, selection is null ? QuestionUrl : $"{QuestionUrl}?selection={selection}");
         request.Headers.Add("X-Chat-Id", chatId);
         return await client.SendAsync(request);
     }

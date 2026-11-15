@@ -81,7 +81,12 @@ export default function App() {
       ) : activeChat.mode === 'multi' ? (
         <HostSetupScreen chat={activeChat} onBack={() => changeActiveChat({ ...activeChat, mode: undefined })} />
       ) : (
-        <ModeScreen chat={activeChat} onChoose={(mode) => changeActiveChat({ ...activeChat, mode })} onWipe={wipeChat} />
+        <ModeScreen
+          chat={activeChat}
+          onChoose={(mode) => changeActiveChat({ ...activeChat, mode })}
+          onSelect={(selection) => changeActiveChat({ ...activeChat, selection })}
+          onWipe={wipeChat}
+        />
       )}
     </main>
   )

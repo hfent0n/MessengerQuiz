@@ -103,7 +103,7 @@ To play with your own chat:
 1. Open http://localhost:5173 and tick the box to confirm you're in the chat.
 2. Choose **Choose your export zips** and select all the zips from your download at once.
 3. Pick a chat from the list. Search helps if you have a lot of them. Group chats with three or more active people work best. Very small chats are rejected because there's not enough to quiz on.
-4. Pick **Single player**, or **Multiplayer** to play with friends (below).
+4. Choose **Most reacted** for the chat's best-known messages, or **Random** for any message, shown with the run of messages that led to it. Then pick **Single player**, or **Multiplayer** to play with friends (below).
 5. For each message, pick who sent it. You'll see whether you were right and a running score.
 6. When you're done, press **Wipe my chat and exit** to delete the chat from the server straight away.
 

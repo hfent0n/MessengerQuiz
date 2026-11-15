@@ -1,3 +1,4 @@
+import type { QuestionSelection } from './activeChat'
 import { loadChatKey, saveChatKey } from './chat/keys'
 import { openQuestion, personName, type OpenedMessage, type SealedQuestion } from './chat/openQuestion'
 import type { Chat } from './chat/parseChat'
@@ -56,11 +57,17 @@ function gzip(blob: Blob): Promise<Blob> {
 type SealedWhoSaidThis = SealedQuestion & { options: number[]; answer: number; reactions: number }
 
 // Returns null when the chat has no questions left.
-export async function nextQuestion(chatId: string, people: string[]): Promise<Question | null> {
+export async function nextQuestion(
+  chatId: string,
+  people: string[],
+  selection: QuestionSelection = 'reacted',
+): Promise<Question | null> {
   const key = await loadChatKey(chatId)
   if (!key) throw new ApiError(401, "This chat's key is missing. Choose the chat again.")
 
-  const response = await fetch('/api/questions/who-said-this', { headers: { [CHAT_ID_HEADER]: chatId } })
+  const response = await fetch(`/api/questions/who-said-this?selection=${selection}`, {
+    headers: { [CHAT_ID_HEADER]: chatId },
+  })
   if (!response.ok) throw await toApiError(response)
   if (response.status === 204) return null
 

@@ -247,7 +247,7 @@ function Lobby({ view, onStart, onRemove }: LobbyProps) {
 
       <p className="note">
         {view.endless ? 'Endless, until the host declares the winner' : `${view.questionLimit} questions`},{' '}
-        {view.timeLimitSeconds} seconds each.
+        {view.timeLimitSeconds} seconds each, from {view.selection === 'random' ? 'random messages' : 'the most-reacted messages'}.
       </p>
 
       {view.youAreHost && (

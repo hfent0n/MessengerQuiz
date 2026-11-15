@@ -23,6 +23,22 @@ public sealed class MessageSelector(IOptions<QuizOptions> options)
             .ToList();
     }
 
+    // Any message that can be a question, whatever its reactions, as long as it ends its run: the next message is
+    // from someone else, is a system line, or comes after a long gap. Its context then shows the run that led to it.
+    public IReadOnlyList<Message> SelectRandomPool(Chat chat) =>
+        chat.Messages.Where((message, index) => message.Quizzable && EndsItsRun(chat, index)).ToList();
+
+    public bool EndsItsRun(Chat chat, int index)
+    {
+        if (index + 1 >= chat.Messages.Count)
+        {
+            return true;
+        }
+
+        var next = chat.Messages[index + 1];
+        return next.Sender != chat.Messages[index].Sender || next.System || !WithinContextGap(chat.Messages[index], next);
+    }
+
     // Earlier messages in the same sender's run, oldest first, in case the question needs them to make sense.
     public IReadOnlyList<Message> PrecedingContext(Chat chat, int index)
     {
