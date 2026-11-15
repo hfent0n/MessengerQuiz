@@ -17,8 +17,10 @@ public sealed record RoomView(
     int MaxPlayers,
     IReadOnlyList<PlayerView> Players,
     int QuestionNumber,
-    // In endless mode, how many questions the chat has left to give, at most.
+    // How many questions the game has once started. In endless mode, how many the chat has left to give, at most.
     int QuestionCount,
+    // The length the host chose, shown in the lobby: a number of questions, or null for endless.
+    int? QuestionLimit,
     bool Endless,
     // What a full score bar stands for. In endless mode, the questions asked so far.
     int MaxScore,
@@ -67,6 +69,7 @@ public sealed record RoomView(
             players,
             room.QuestionIndex + 1,
             room.Questions.Count,
+            room.QuestionLimit,
             room.Endless,
             (room.Endless ? Math.Max(room.QuestionIndex + 1, 1) : room.Questions.Count) * Scoring.MaxPointsPerQuestion,
             showsQuestion ? QuestionView.For(room, question!, viewer, now) : null,

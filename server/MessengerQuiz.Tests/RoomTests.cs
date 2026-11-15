@@ -226,6 +226,45 @@ public class RoomTests
     }
 
     [Fact]
+    public void TheHostCanRemovePlayersFromTheLobby()
+    {
+        _room.AddChat(_guest, TestChats.Sealed("spam"));
+        _room.AddChat(_host, TestChats.Sealed("welcome"));
+
+        Assert.Same(_guest, _room.Remove(_host, _guest.Id));
+
+        Assert.Equal([_host], _room.Players);
+        Assert.Equal(["welcome"], _room.Chat.Select(line => TestChats.Label(line.Sealed)));
+        Assert.True(_room.WasRemoved(_guest.Token));
+        Assert.False(_room.WasRemoved(_host.Token));
+    }
+
+    [Fact]
+    public void OnlyTheHostRemovesAndNeverThemselves()
+    {
+        Assert.Null(_room.Remove(_guest, _host.Id));
+        Assert.Null(_room.Remove(_host, _host.Id));
+        Assert.Null(_room.Remove(_host, "nobody"));
+        Assert.Equal(2, _room.Players.Count);
+    }
+
+    [Fact]
+    public void NobodyCanBeRemovedOnceTheGameStarts()
+    {
+        StartGame(questionCount: 1);
+
+        Assert.Null(_room.Remove(_host, _guest.Id));
+    }
+
+    [Fact]
+    public void ARemovedPlayersNameCanBeUsedAgain()
+    {
+        _room.Remove(_host, _guest.Id);
+
+        Assert.Equal(JoinOutcome.Joined, _room.AddPlayer(NewPlayer("Guest")));
+    }
+
+    [Fact]
     public void ChatKeepsTheLatestMessages()
     {
         for (var index = 1; index <= Room.MaxChatLines + 10; index++)

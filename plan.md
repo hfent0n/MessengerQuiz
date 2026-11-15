@@ -347,6 +347,15 @@ Each player has a score bar that fills towards the most points possible in the g
 - **Names:** trimmed, 1 to 20 characters, letters and digits only, with single spaces between words. Unicode letters are allowed, so names such as "José" work. Control characters and invisible characters are rejected. Names must be unique in the room, ignoring case. React escapes names when it shows them, so they can't inject HTML.
 - **Players:** up to 8, including the host.
 
+### Removing players
+
+Built. Before the game starts, the host can remove any other player from the lobby with the **Remove** button beside their name. The hub method is `Remove(playerId)`.
+
+- **The removed player** gets a `removed` event and sees "The host removed you from this game." Their seat's token is recorded, so reconnecting or refreshing shows the same message, and their connection can't act in the room.
+- **Their chat messages are deleted,** which helps with spam.
+- **Not allowed:** removing anyone after the start, the host removing themselves, or anyone else removing players.
+- **Their name is free again.** They can still join again with the link under a new name, since there are no accounts to recognise them by. The host can start a new game for a new link and key.
+
 ### Game length
 
 Built. The host picks 5, 10 or 20 questions, or **Endless**, when creating the game. The default is 10.
@@ -354,6 +363,7 @@ Built. The host picks 5, 10 or 20 questions, or **Endless**, when creating the g
 - **Endless** takes every text question the chat has left and keeps going until they run out, or until the host presses **End game and declare the winner**. That button shows only for the host, only in endless mode, and only after a reveal, so nobody's answer to an open question is lost. The hub method is `Declare`.
 - **The header** shows "Question 3" instead of "3 / 10".
 - **Score bars** fill relative to the questions asked so far.
+- **The lobby** shows the chosen length from the view's `questionLimit`, since questions aren't picked until the start.
 - **`POST /api/rooms`** takes an optional `questionCount`, one of `Quiz:QuestionCounts`, or `endless: true`. The room view has an `endless` flag, and its `questionCount` is how many questions the chat can still give.
 
 ### Chat and quick reactions

@@ -17,6 +17,7 @@ public sealed class Room(
     private readonly Dictionary<string, PlayerAnswer> _answers = [];
     private readonly HashSet<string> _ready = [];
     private readonly List<ChatLine> _chat = [];
+    private readonly HashSet<string> _removedTokens = [];
     private IReadOnlyList<WhoSaidThisQuestion> _questions = [];
     private int _nextChatId;
 
@@ -165,6 +166,25 @@ public sealed class Room(
 
         Changed();
     }
+
+    // The host can remove other players before the game starts. Their messages go too, and their seat stops
+    // working, so a refresh doesn't bring them back. They could still join again with the link under a new name.
+    public Player? Remove(Player host, string playerId)
+    {
+        var player = _players.FirstOrDefault(candidate => candidate.Id == playerId);
+        if (!host.IsHost || Stage != RoomStage.Lobby || player is null || player.IsHost)
+        {
+            return null;
+        }
+
+        _players.Remove(player);
+        _removedTokens.Add(player.Token);
+        _chat.RemoveAll(line => line.PlayerId == player.Id);
+        Changed();
+        return player;
+    }
+
+    public bool WasRemoved(string token) => _removedTokens.Any(removed => RoomStore.TokensMatch(removed, token));
 
     // Chat stays open throughout, including during questions. Returns false once the game has ended.
     public bool AddChat(Player player, string sealedMessage)

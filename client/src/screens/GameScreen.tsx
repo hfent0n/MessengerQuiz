@@ -25,7 +25,7 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
   const contents = useOpenedContents(code, view)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  async function act(method: Action, ...args: number[]) {
+  async function act(method: Action, ...args: (string | number)[]) {
     setActionError(await send(method, ...args))
   }
 
@@ -56,7 +56,9 @@ export default function GameScreen({ code, token, onWipe, onLeave }: Props) {
       </header>
       {reconnecting && <p className="note" role="status">Reconnecting…</p>}
 
-      {view.stage === 'lobby' && <Lobby view={view} onStart={() => act('Start')} />}
+      {view.stage === 'lobby' && (
+        <Lobby view={view} onStart={() => act('Start')} onRemove={(playerId) => act('Remove', playerId)} />
+      )}
 
       {playing && (
         <div className="game">
@@ -143,7 +145,13 @@ function useOpenedContents(code: string, view: RoomView | null) {
 
 const DECRYPT_ERROR = "This game's messages couldn't be decrypted. Ask the host to send the whole link again."
 
-function Lobby({ view, onStart }: { view: RoomView; onStart: () => void }) {
+type LobbyProps = {
+  view: RoomView
+  onStart: () => void
+  onRemove: (playerId: string) => void
+}
+
+function Lobby({ view, onStart, onRemove }: LobbyProps) {
   const key = roomKeyText(view.code)
   const link = linkWithKey(`${location.origin}${playPath(view.code)}`, key ?? '')
   const others = view.players.length - 1
@@ -173,12 +181,17 @@ function Lobby({ view, onStart }: { view: RoomView; onStart: () => void }) {
             {player.isHost && <span className="tag">host</span>}
             {player.id === view.youId && <span className="tag">you</span>}
             {!player.connected && <span className="tag">away</span>}
+            {view.youAreHost && !player.isHost && (
+              <button type="button" className="remove-player" onClick={() => onRemove(player.id)} aria-label={`Remove ${player.name}`}>
+                Remove
+              </button>
+            )}
           </li>
         ))}
       </ul>
 
       <p className="note">
-        {view.endless ? 'Endless, until the host declares the winner' : `${view.questionCount} questions`},{' '}
+        {view.endless ? 'Endless, until the host declares the winner' : `${view.questionLimit} questions`},{' '}
         {view.timeLimitSeconds} seconds each.
       </p>
 
