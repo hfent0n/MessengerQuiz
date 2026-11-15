@@ -157,6 +157,21 @@ public class WhoSaidThisGeneratorTests
         Assert.Contains(2, question.Options);
     }
 
+    [Fact]
+    public void RandomQuestionsComeFromTheRandomPoolWithItsOwnOptions()
+    {
+        // The top messages are all from people 0 and 1. The random pool has person 2's message too.
+        var chat = Chat(3, Message(sender: 0, reactions: 9), Message(sender: 1, reactions: 9), Message(sender: 2, label: "quiet"));
+        var session = new ChatSession(chat, chat.Messages.Take(2).ToList(), chat.Messages);
+
+        var reacted = Enumerable.Range(0, 2).Select(_ => _generator.Next(session)!).ToList();
+        var random = _generator.Next(session, QuestionSelection.Random)!;
+
+        Assert.All(reacted, question => Assert.DoesNotContain(2, question.Options));
+        Assert.Equal(("quiet", 2), (Label(random.Sealed), random.Answer));
+        Assert.Equal([0, 1, 2], random.Options.Order());
+    }
+
     private static ChatSession Session(int people, int messageCount)
     {
         var chat = Chat(people, Enumerable.Range(0, messageCount).Select(index => Message(sender: index % people)));

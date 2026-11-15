@@ -81,7 +81,12 @@ public static class RoomEndpoints
             return Problem(StatusCodes.Status401Unauthorized, "This chat has expired. Upload it again to keep playing.");
         }
 
-        return games.CreateRoom(chatId, session, request.Name, request.TimeLimitSeconds, request.Endless ? null : request.QuestionCount ?? QuestionsPerGame(options), out var room, out var host) switch
+        if (!QuestionEndpoints.TryParseSelection(request.Selection, out var selection))
+        {
+            return Problem(StatusCodes.Status400BadRequest, "Choose reacted or random messages.");
+        }
+
+        return games.CreateRoom(chatId, session, request.Name, request.TimeLimitSeconds, request.Endless ? null : request.QuestionCount ?? QuestionsPerGame(options), selection, out var room, out var host) switch
         {
             CreateOutcome.InvalidName => Problem(StatusCodes.Status400BadRequest, InvalidNameMessage),
             CreateOutcome.InvalidTimeLimit => Problem(StatusCodes.Status400BadRequest, "Choose one of the time limits."),
@@ -120,7 +125,9 @@ public static class RoomEndpoints
     private static int QuestionsPerGame(IOptions<QuizOptions> options) => options.Value.QuestionsPerGame;
 
     // QuestionCount is optional and defaults to QuestionsPerGame. Endless ignores it.
-    private sealed record CreateRoomRequest(string? Name, int TimeLimitSeconds, int? QuestionCount = null, bool Endless = false);
+    // Selection is "reacted", the default, or "random".
+    private sealed record CreateRoomRequest(
+        string? Name, int TimeLimitSeconds, int? QuestionCount = null, bool Endless = false, string? Selection = null);
 
     private sealed record JoinRoomRequest(string? Name);
 

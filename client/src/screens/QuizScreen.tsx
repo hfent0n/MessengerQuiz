@@ -27,7 +27,7 @@ export default function QuizScreen({ chat, media, onWipe, onExpired }: Props) {
   useEffect(() => {
     let cancelled = false
 
-    nextQuestion(chat.chatId, chat.people)
+    nextQuestion(chat.chatId, chat.people, chat.selection)
       .then((question) => {
         if (cancelled) return
         setRound(question ? { status: 'asking', question } : { status: 'finished' })
@@ -44,7 +44,7 @@ export default function QuizScreen({ chat, media, onWipe, onExpired }: Props) {
     return () => {
       cancelled = true
     }
-  }, [chat.chatId, chat.people, roundNumber, onExpired])
+  }, [chat.chatId, chat.people, chat.selection, roundNumber, onExpired])
 
   function answer(question: Question, choice: string) {
     setRound({ status: 'answered', question, choice })

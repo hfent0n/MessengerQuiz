@@ -38,7 +38,7 @@ export default function HostSetupScreen({ chat, onBack }: Props) {
     try {
       const key = chatKeyText(chat.chatId)
       if (!key) throw new Error("This chat's key is missing. Choose the chat again.")
-      const room = await createRoom(chat.chatId, name, timeLimit, questionCount)
+      const room = await createRoom(chat.chatId, name, timeLimit, questionCount, chat.selection)
       saveRoomToken(room.code, room.playerToken)
       saveRoomKey(room.code, key)
       navigate(playPath(room.code))

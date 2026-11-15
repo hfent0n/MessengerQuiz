@@ -368,6 +368,26 @@ public class MultiplayerApiTests : IAsyncLifetime
         Assert.False(view.GetProperty("endless").GetBoolean());
     }
 
+    [Fact]
+    public async Task TheHostCanChooseRandomMessages()
+    {
+        var host = await CreateRoomWith(new { name = "Host", timeLimitSeconds = 20, selection = "random" });
+
+        var lobby = await host.WaitFor(view => Stage(view) == "lobby");
+
+        Assert.Equal("random", lobby.GetProperty("selection").GetString());
+    }
+
+    [Fact]
+    public async Task RejectsAnUnknownSelection()
+    {
+        var chatId = await UploadChat();
+
+        var response = await PostRoom(chatId, new { name = "Host", timeLimitSeconds = 20, selection = "loudest" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     [Theory]
     [InlineData(7)]
     [InlineData(0)]

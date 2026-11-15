@@ -10,7 +10,13 @@ public enum JoinOutcome { Joined, AlreadyStarted, Full, NameTaken }
 // The game's rules. Callers hold Gate while using a room, so its methods don't lock themselves.
 // Methods that take the time are given it, which keeps the rules easy to test.
 public sealed class Room(
-    string code, string chatId, ChatSession session, TimeSpan timeLimit, int maxPlayers, int? questionLimit = 10)
+    string code,
+    string chatId,
+    ChatSession session,
+    TimeSpan timeLimit,
+    int maxPlayers,
+    int? questionLimit = 10,
+    QuestionSelection selection = QuestionSelection.Reacted)
 {
     private readonly List<Player> _players = [];
     private readonly HashSet<int> _askedPositions = [];
@@ -35,6 +41,9 @@ public sealed class Room(
     // How many questions a game has, or null for endless: until the chat runs out or the host ends it.
     public int? QuestionLimit { get; } = questionLimit;
     public bool Endless => QuestionLimit is null;
+
+    // Whether questions come from the most-reacted messages or any message that ends its run.
+    public QuestionSelection Selection { get; } = selection;
 
     public RoomStage Stage { get; private set; } = RoomStage.Lobby;
 

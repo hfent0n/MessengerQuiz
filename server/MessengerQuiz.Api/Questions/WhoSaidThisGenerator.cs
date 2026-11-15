@@ -21,20 +21,22 @@ public sealed class WhoSaidThisGenerator(MessageSelector selector) : IQuestionGe
 {
     private const int MaxOptions = 4;
 
-    public WhoSaidThisQuestion? Next(ChatSession session)
+    public WhoSaidThisQuestion? Next(ChatSession session, QuestionSelection selection = QuestionSelection.Reacted)
     {
         var item = session.TakeNext(
             candidates => MessageSelector.PickBalanced(candidates, Random.Shared),
-            message => selector.PrecedingContext(session.Chat, message.Position));
-        return item is null ? null : Create(session, item.Message, item.Context);
+            message => selector.PrecedingContext(session.Chat, message.Position),
+            selection);
+        return item is null ? null : Create(session, item.Message, item.Context, selection);
     }
 
     // Builds the question for a message that has already been chosen, with up to 4 shuffled options. The other
     // options are people who sent top messages, with automated accounts much less likely to be picked.
-    public static WhoSaidThisQuestion Create(ChatSession session, Message message, IReadOnlyList<Message> context)
+    public static WhoSaidThisQuestion Create(
+        ChatSession session, Message message, IReadOnlyList<Message> context, QuestionSelection selection = QuestionSelection.Reacted)
     {
         var others = PickWeighted(
-            session.OptionPeople.Where(person => person != message.Sender).ToList(),
+            session.OptionPeople(selection).Where(person => person != message.Sender).ToList(),
             person => session.Chat.Automated.Contains(person) ? AutomatedWeight : 1,
             MaxOptions - 1);
 

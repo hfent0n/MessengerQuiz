@@ -62,6 +62,7 @@ public sealed class GameService : IDisposable
         string? hostName,
         int timeLimitSeconds,
         int? questionCount,
+        QuestionSelection selection,
         out Room? room,
         out Player? host)
     {
@@ -93,7 +94,7 @@ public sealed class GameService : IDisposable
         do
         {
             room = new Room(
-                RoomStore.NewCode(), chatId, session, TimeSpan.FromSeconds(timeLimitSeconds), _options.MaxPlayers, questionCount);
+                RoomStore.NewCode(), chatId, session, TimeSpan.FromSeconds(timeLimitSeconds), _options.MaxPlayers, questionCount, selection);
         }
         while (!_rooms.TryAdd(room));
 
@@ -421,7 +422,7 @@ public sealed class GameService : IDisposable
     private (List<WhoSaidThisQuestion> Questions, List<int> Used) PickQuestions(Room room, bool includeMedia)
     {
         var chat = room.Session.Chat;
-        var candidates = room.Session.Eligible
+        var candidates = room.Session.Pool(room.Selection)
             .Where(message => (includeMedia || message.MediaCount == 0) && !room.AskedPositions.Contains(message.Position))
             .ToList();
         var questions = new List<WhoSaidThisQuestion>();
@@ -433,7 +434,7 @@ public sealed class GameService : IDisposable
             && MessageSelector.PickBalanced(candidates, Random.Shared) is { } pick)
         {
             var context = _selector.PrecedingContext(chat, pick.Position);
-            questions.Add(WhoSaidThisGenerator.Create(room.Session, pick, context));
+            questions.Add(WhoSaidThisGenerator.Create(room.Session, pick, context, room.Selection));
 
             var shown = context.Select(message => message.Position).Append(pick.Position).ToHashSet();
             candidates.RemoveAll(message => shown.Contains(message.Position));

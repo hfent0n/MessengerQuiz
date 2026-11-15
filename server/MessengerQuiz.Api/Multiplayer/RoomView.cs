@@ -1,4 +1,5 @@
 using MessengerQuiz.Api.Questions;
+using MessengerQuiz.Api.Storage;
 
 namespace MessengerQuiz.Api.Multiplayer;
 
@@ -22,6 +23,7 @@ public sealed record RoomView(
     // The length the host chose, shown in the lobby: a number of questions, or null for endless.
     int? QuestionLimit,
     bool Endless,
+    QuestionSelection Selection,
     // What a full score bar stands for. In endless mode, the questions asked so far.
     int MaxScore,
     QuestionView? Question,
@@ -74,6 +76,7 @@ public sealed record RoomView(
             room.Questions.Count,
             room.QuestionLimit,
             room.Endless,
+            room.Selection,
             (room.Endless ? Math.Max(room.QuestionIndex + 1, 1) : room.Questions.Count) * Scoring.MaxPointsPerQuestion,
             showsQuestion ? QuestionView.For(room, question!, viewer, now) : null,
             room.Stage == RoomStage.Reveal ? RevealView.For(room, question!) : null,

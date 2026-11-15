@@ -5,7 +5,17 @@ namespace MessengerQuiz.Api.Storage;
 
 public sealed record QuizItem(Message Message, IReadOnlyList<Message> Context);
 
-public sealed class ChatSession(Chat chat, IReadOnlyList<Message> eligible)
+// Which messages questions come from.
+public enum QuestionSelection
+{
+    // The most-reacted share of messages.
+    Reacted,
+
+    // Any message that ends its run, whatever its reactions.
+    Random,
+}
+
+public sealed class ChatSession(Chat chat, IReadOnlyList<Message> eligible, IReadOnlyList<Message>? randomPool = null)
 {
     private const int MessageOverheadBytes = 120;
 
@@ -16,10 +26,22 @@ public sealed class ChatSession(Chat chat, IReadOnlyList<Message> eligible)
     public string Id { get; } = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
     public Chat Chat { get; } = chat;
     public IReadOnlyList<Message> Eligible { get; } = eligible;
+    public IReadOnlyList<Message> RandomPool { get; } = randomPool ?? eligible;
 
-    // Only people who sent a top message are offered as options. Someone who never features, such as an automated
-    // account, would be an obviously wrong answer.
-    public IReadOnlyList<int> OptionPeople { get; } = eligible.Select(message => message.Sender).Distinct().Order().ToList();
+    public IReadOnlyList<Message> Pool(QuestionSelection selection) =>
+        selection == QuestionSelection.Random ? RandomPool : Eligible;
+
+    // Only people who sent a message in the pool are offered as options. Someone who never features, such as an
+    // automated account, would be an obviously wrong answer.
+    public IReadOnlyList<int> OptionPeople(QuestionSelection selection) => selection == QuestionSelection.Random
+        ? _randomOptionPeople.Value
+        : _reactedOptionPeople;
+
+    private readonly IReadOnlyList<int> _reactedOptionPeople = Senders(eligible);
+    private readonly Lazy<IReadOnlyList<int>> _randomOptionPeople = new(() => Senders(randomPool ?? eligible));
+
+    private static IReadOnlyList<int> Senders(IReadOnlyList<Message> messages) =>
+        messages.Select(message => message.Sender).Distinct().Order().ToList();
 
     // Strings take 2 bytes per character in .NET.
     public long EstimatedBytes { get; } =
@@ -30,11 +52,12 @@ public sealed class ChatSession(Chat chat, IReadOnlyList<Message> eligible)
     // Context messages are recorded too, since a player who has seen them knows who sent them.
     public QuizItem? TakeNext(
         Func<IReadOnlyList<Message>, Message?> pick,
-        Func<Message, IReadOnlyList<Message>> findContext)
+        Func<Message, IReadOnlyList<Message>> findContext,
+        QuestionSelection selection = QuestionSelection.Reacted)
     {
         lock (_gate)
         {
-            var next = pick(Eligible.Where(message => !_askedPositions.Contains(message.Position)).ToList());
+            var next = pick(Pool(selection).Where(message => !_askedPositions.Contains(message.Position)).ToList());
             if (next is null)
             {
                 return null;

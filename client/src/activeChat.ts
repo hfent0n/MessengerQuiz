@@ -8,7 +8,12 @@ export type ActiveChat = {
   demo?: boolean
   // Unset until the player picks single player or multiplayer.
   mode?: 'single' | 'multi'
+  // Which messages questions come from. Unset means the most reacted.
+  selection?: QuestionSelection
 }
+
+// The most-reacted messages, or a random sample of messages that end their run, with the run shown as context.
+export type QuestionSelection = 'reacted' | 'random'
 
 const STORAGE_KEY = 'messenger-quiz-chat'
 

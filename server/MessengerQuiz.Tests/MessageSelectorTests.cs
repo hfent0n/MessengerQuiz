@@ -148,6 +148,37 @@ public class MessageSelectorTests
     }
 
     [Fact]
+    public void ARunEndsAtANewSenderASystemLineALongGapOrTheEnd()
+    {
+        var chat = Chat(2,
+            Message(sender: 0, minute: 0),
+            Message(sender: 0, minute: 1),
+            Message(sender: 1, minute: 2),
+            Message(sender: 1, minute: 30),
+            Message(sender: 0, minute: 31),
+            Message(sender: 0, minute: 32, quizzable: false, system: true),
+            Message(sender: 1, minute: 33));
+
+        var ends = Enumerable.Range(0, chat.Messages.Count).Where(index => _selector.EndsItsRun(chat, index));
+
+        // 0 is followed by the same sender within the gap, so it doesn't end its run. 1, 3 and 5: a new sender next.
+        // 2: a long gap next. 4: a system line next. 6: the last message.
+        Assert.Equal([1, 2, 3, 4, 5, 6], ends);
+    }
+
+    [Fact]
+    public void TheRandomPoolTakesRunEndingMessagesWhateverTheirReactions()
+    {
+        var chat = Chat(2,
+            Message(sender: 0, minute: 0, reactions: 50, label: "mid-run, popular"),
+            Message(sender: 0, minute: 1, reactions: 0, label: "ends the run, ignored"),
+            Message(sender: 1, minute: 2, reactions: 0, quizzable: false, label: "too short"),
+            Message(sender: 0, minute: 3, reactions: 0, label: "last"));
+
+        Assert.Equal(["ends the run, ignored", "last"], Labels(_selector.SelectRandomPool(chat)));
+    }
+
+    [Fact]
     public void PickBalancedGivesQuietSendersAFairShare()
     {
         var candidates = Enumerable.Range(0, 99).Select(_ => Message(sender: 0)).Append(Message(sender: 1)).ToList();
